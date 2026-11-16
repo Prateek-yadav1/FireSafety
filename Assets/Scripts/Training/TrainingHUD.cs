@@ -27,7 +27,6 @@ using FireSafety.Training;
 ///              - Objective 05: Active extinguishing with realistic cryogenic CO2 vapor
 ///              - Mission Complete & Dynamic Performance Debrief (score based on response time & penalties!)
 /// </summary>
-[RequireComponent(typeof(Camera))]
 public class TrainingHUD : MonoBehaviour
 {
     // ─── Color Palette Matching Figma Dark-Glass Theme ───────────────────────

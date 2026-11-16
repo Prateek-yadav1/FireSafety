@@ -49,11 +49,7 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void Start()
     {
-        // Ensure VRControllerManager is active on camera for VR headset & controllers
-        if (GetComponent<FireSafety.Interactions.VRControllerManager>() == null)
-        {
-            gameObject.AddComponent<FireSafety.Interactions.VRControllerManager>();
-        }
+        // VRControllerManager is added in the scene directly — do not auto-add to avoid duplicates
 
         // Initialize look angles from the scene rotation
         Vector3 angles = transform.eulerAngles;
