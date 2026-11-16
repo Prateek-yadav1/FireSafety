@@ -244,9 +244,11 @@ public class TrainingHUD : MonoBehaviour
     {
         bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
         bool space = Input.GetKeyDown(KeyCode.Space);
+        bool eKey  = Input.GetKeyDown(KeyCode.E);
+        bool click = Input.GetMouseButtonDown(0);
         bool t     = Input.GetKeyDown(KeyCode.T); // Debug skip
 
-        // Check VR Controller [A / Primary] button
+        // Check VR Controller [A / Primary] or Trigger button
         bool vrAdvance = false;
         var rDevs = new List<UnityEngine.XR.InputDevice>();
         UnityEngine.XR.InputDevices.GetDevicesWithCharacteristics(UnityEngine.XR.InputDeviceCharacteristics.HeldInHand | UnityEngine.XR.InputDeviceCharacteristics.Right, rDevs);
@@ -256,9 +258,13 @@ public class TrainingHUD : MonoBehaviour
             {
                 vrAdvance = true;
             }
+            if (rDevs[0].TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out bool trig) && trig)
+            {
+                vrAdvance = true;
+            }
         }
 
-        bool proceed = enter || space || vrAdvance;
+        bool proceed = enter || space || eKey || click || vrAdvance;
 
         if (t) { DebugSkip(); return; }
 

@@ -301,6 +301,7 @@ namespace FireSafety.Interactions
             // 1. Right Controller Pose
             if (rightController.isValid)
             {
+                rightHandRoot.SetActive(true);
                 if (rightController.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 rPos))
                 {
                     rightHandRoot.transform.localPosition = rPos;
@@ -312,15 +313,21 @@ namespace FireSafety.Interactions
             }
             else
             {
-                // Fallback procedural idle sway when controllers are resting
-                float bob = Mathf.Sin(Time.time * 1.5f) * 0.008f;
-                rightHandRoot.transform.localPosition = new Vector3(0.22f, -0.22f + bob, 0.45f);
-                rightHandRoot.transform.localRotation = Quaternion.Euler(5f, -5f, 0f);
+                // In desktop mode without physical VR controllers, keep hands unobtrusive
+                bool isVR = IsVRActive;
+                rightHandRoot.SetActive(isVR);
+                if (isVR)
+                {
+                    float bob = Mathf.Sin(Time.time * 1.5f) * 0.008f;
+                    rightHandRoot.transform.localPosition = new Vector3(0.22f, -0.22f + bob, 0.45f);
+                    rightHandRoot.transform.localRotation = Quaternion.Euler(5f, -5f, 0f);
+                }
             }
 
             // 2. Left Controller Pose
             if (leftController.isValid)
             {
+                leftHandRoot.SetActive(true);
                 if (leftController.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 lPos))
                 {
                     leftHandRoot.transform.localPosition = lPos;
@@ -332,9 +339,14 @@ namespace FireSafety.Interactions
             }
             else
             {
-                float bob = Mathf.Sin(Time.time * 1.5f + 1.2f) * 0.008f;
-                leftHandRoot.transform.localPosition = new Vector3(-0.22f, -0.22f + bob, 0.45f);
-                leftHandRoot.transform.localRotation = Quaternion.Euler(5f, 5f, 0f);
+                bool isVR = IsVRActive;
+                leftHandRoot.SetActive(isVR);
+                if (isVR)
+                {
+                    float bob = Mathf.Sin(Time.time * 1.5f + 1.2f) * 0.008f;
+                    leftHandRoot.transform.localPosition = new Vector3(-0.22f, -0.22f + bob, 0.45f);
+                    leftHandRoot.transform.localRotation = Quaternion.Euler(5f, 5f, 0f);
+                }
             }
         }
 
@@ -385,11 +397,11 @@ namespace FireSafety.Interactions
 
         private void HandleVRLaserInteraction()
         {
-            // If holding an extinguisher, hide laser and let the nozzle be the aim point
-            if (activeHeldExtinguisher != null)
+            // If in desktop mode without physical VR controllers or holding an extinguisher, hide VR laser
+            if (!rightController.isValid || activeHeldExtinguisher != null)
             {
-                rightLaser.enabled = false;
-                laserDot.SetActive(false);
+                if (rightLaser != null) rightLaser.enabled = false;
+                if (laserDot != null) laserDot.SetActive(false);
                 return;
             }
 

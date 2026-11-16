@@ -1,32 +1,15 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 using FireSafety.Extinguishers;
 using FireSafety.Fire;
 using FireSafety.Interactions;
 
 /// <summary>
-/// First-person walkthrough controller for desktop evaluation of the VR Fire Safety Training kitchen.
-///
-/// Movement & Navigation:
-///   - W, A, S, D / Arrow keys: Walk around the kitchen.
-///   - Mouse: Look around (360-degree free look).
-///   - Shift: Walk faster / sprint.
-///
-/// Extinguisher Controls:
-///   - Press [1]: Quick-equip WET CHEMICAL extinguisher (Yellow - Class F/K Kitchen Oil).
-///   - Press [2]: Quick-equip DRY POWDER extinguisher (Blue - Class ABC).
-///   - Press [3]: Quick-equip CO₂ extinguisher (Black - Class B & Electrical).
-///   - Click Left Mouse Button on any extinguisher to pick it up.
-///   - While holding an extinguisher:
-///       [P]           : Pull safety pin (PASS step 1)
-///       [Hold Space]  : Squeeze handle & spray discharge (PASS step 3)
-///       [G]           : Drop extinguisher on the floor in front of you
-///       [R]           : Reset extinguisher back to wall station
-///
-/// Environment Controls:
-///   - [F] : Toggle stove fire ON/OFF
-///   - [A] : Toggle fire alarm (siren & red flashing strobe)
-///   - [X] : Cycle EXIT sign states (Normal -> Emergency Backup -> Off)
-///   - [L] : Toggle electrical power switch (cuts room lights)
+/// Dual-mode Controller for both Desktop (Mouse + Keyboard) and VR (Meta Quest).
+/// Seamlessly supports:
+///  - Desktop: WASD movement, mouse look (with cursor toggle via ESC / click), number keys, interaction raycast.
+///  - VR: HMD head tracking, dual 6-DoF controllers, thumbstick locomotion, laser interactions.
 /// </summary>
 public class KitchenPlayerController : MonoBehaviour
 {
@@ -36,31 +19,59 @@ public class KitchenPlayerController : MonoBehaviour
 
     [Header("Mouse Look")]
     [SerializeField] private float mouseSensitivity = 2.0f;
-    [SerializeField] private float maxPitch = 75f;
-    [SerializeField] private float minPitch = -70f;
+    [SerializeField] private float maxPitch = 80f;
+    [SerializeField] private float minPitch = -75f;
 
     [Header("Interaction Raycast")]
-    [SerializeField] private float interactionDistance = 3.5f;
+    [SerializeField] private float interactionDistance = 4.0f;
 
     private float pitch = 0f;
     private float yaw = 0f;
     private bool isMouseLookActive = true;
     private FireExtinguisher activeHeldExtinguisher;
 
+    // Kitchen room bounds
+    private const float KitchenMinX = 199.0f;
+    private const float KitchenMaxX = 205.8f;
+    private const float KitchenMinZ = -3.8f;
+    private const float KitchenMaxZ = 3.8f;
+    private const float PlayerEyeHeight = 1.60f;
+
     private void Start()
     {
-        // VRControllerManager is added in the scene directly — do not auto-add to avoid duplicates
-
-        // Initialize look angles from the scene rotation
+        // Initialize look angles from current camera rotation
         Vector3 angles = transform.eulerAngles;
         pitch = angles.x > 180f ? angles.x - 360f : angles.x;
         yaw = angles.y;
 
-        // Lock and hide cursor for FPS feel
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        // Ensure player is inside kitchen
+        if (transform.position.x < 100f)
+        {
+            transform.position = new Vector3(202.8f, PlayerEyeHeight, 0.0f);
+            yaw = -90f;
+            pitch = 0f;
+            transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+        }
 
-        Debug.Log("[KitchenPlayerController] Active. VR Controllers & Headset enabled, Desktop WASD/Mouse fallback ready.");
+        // On desktop/editor, start with mouse look active but keep cursor visible if briefing is open
+        SetMouseLookState(true);
+
+        Debug.Log("[KitchenPlayerController] Initialized. WASD/Mouse and VR Headset/Controllers ready.");
+    }
+
+    public void SetMouseLookState(bool active)
+    {
+        isMouseLookActive = active;
+        if (active)
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     private void Update()
@@ -70,42 +81,75 @@ public class KitchenPlayerController : MonoBehaviour
         HandleQuickEquipKeys();
         TrackHeldExtinguisher();
 
-        // Only handle click interaction when NOT holding an extinguisher
-        // (otherwise clicks are used for discharge)
         if (activeHeldExtinguisher == null)
         {
             HandleInteractionRaycast();
         }
     }
 
+    /// <summary>
+    /// Checks whether an actual physical VR HMD is actively providing head tracking data.
+    /// In Unity Editor on macOS/PC without a physical connected headset streaming frames, returns false so mouse look works!
+    /// </summary>
+    public static bool IsPhysicalHMDActive()
+    {
+#if UNITY_EDITOR
+        // In the editor, always allow mouse look so the developer can look around and test!
+        return false;
+#else
+        if (!XRSettings.isDeviceActive) return false;
+        var hmd = InputDevices.GetDeviceAtXRNode(XRNode.Head);
+        if (hmd.isValid && hmd.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rot))
+        {
+            return rot != Quaternion.identity;
+        }
+        return false;
+#endif
+    }
+
     private void HandleMouseLook()
     {
-        // When wearing a VR headset, HMD head tracking drives orientation natively
-        if (UnityEngine.XR.XRSettings.isDeviceActive) return;
+        // When running in VR with an active tracked headset, HMD hardware orientation drives the view
+        if (IsPhysicalHMDActive()) return;
 
-        if (isMouseLookActive)
+        // Toggle cursor lock with ESC
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            SetMouseLookState(!isMouseLookActive);
+        }
+
+        // Clicking in the Game window locks cursor back to FPS mode
+        if (!isMouseLookActive && Input.GetMouseButtonDown(0))
+        {
+            // If training HUD is displaying a card, give user option to click with mouse
+            var hud = FindObjectOfType<TrainingHUD>();
+            bool inModalDialog = hud != null && (hud.State == TrainingHUD.TrainingState.KitchenBriefing ||
+                                                 hud.State == TrainingHUD.TrainingState.MissionComplete);
+            if (!inModalDialog)
+            {
+                SetMouseLookState(true);
+            }
+        }
+
+        // Mouse look rotation
+        if (isMouseLookActive || Input.GetMouseButton(1)) // Right-click always looks around
         {
             float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
             float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
 
-            yaw += mouseX;
-            pitch -= mouseY;
-            pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
-
-            transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
-        }
-
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            isMouseLookActive = !isMouseLookActive;
-            Cursor.lockState = isMouseLookActive ? CursorLockMode.Locked : CursorLockMode.None;
-            Cursor.visible = !isMouseLookActive;
+            if (Mathf.Abs(mouseX) > 0.0001f || Mathf.Abs(mouseY) > 0.0001f)
+            {
+                yaw += mouseX;
+                pitch -= mouseY;
+                pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+                transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+            }
         }
     }
 
     private void HandleMovement()
     {
-        float speed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : moveSpeed;
+        float speed = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? sprintSpeed : moveSpeed;
 
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
@@ -123,29 +167,18 @@ public class KitchenPlayerController : MonoBehaviour
             Vector3 moveDir = (forward * v + right * h).normalized;
             Vector3 newPos = transform.position + moveDir * (speed * Time.deltaTime);
 
-            bool inKitchen = transform.position.x > 100f;
-            if (inKitchen)
+            if (transform.position.x > 100f)
             {
-                // Room 02: Kitchen bounds
-                newPos.y = 1.60f;
-                newPos.x = Mathf.Clamp(newPos.x, 199.0f, 205.8f);
-                newPos.z = Mathf.Clamp(newPos.z, -3.8f, 3.8f);
-            }
-            else
-            {
-                // Room 01: Orientation Studio bounds
-                newPos.y = 1.55f;
-                newPos.x = Mathf.Clamp(newPos.x, -2.2f, 2.2f);
-                newPos.z = Mathf.Clamp(newPos.z, -0.8f, 1.8f);
+                // Kitchen room boundaries
+                newPos.y = PlayerEyeHeight;
+                newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
+                newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
             }
 
             transform.position = newPos;
         }
     }
 
-    /// <summary>
-    /// Teleports the player to a target location and updates look orientation smoothly.
-    /// </summary>
     public void Teleport(Vector3 targetPosition, Vector3 targetEuler)
     {
         transform.position = targetPosition;
@@ -157,12 +190,12 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleInteractionRaycast()
     {
-        if (Input.GetMouseButtonDown(0))
+        if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.E))
         {
             Ray ray = new Ray(transform.position, transform.forward);
             if (Physics.Raycast(ray, out RaycastHit hit, interactionDistance))
             {
-                // 1. Fire Extinguisher pick-up
+                // 1. Pick up extinguisher
                 FireExtinguisher extinguisher = hit.collider.GetComponentInParent<FireExtinguisher>();
                 if (extinguisher != null && !extinguisher.IsHeld)
                 {
@@ -201,17 +234,14 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleQuickEquipKeys()
     {
-        // [1] Quick-equip Water (Class A - Electrocution hazard on electrical fire)
         if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
         {
             EquipExtinguisherByType(ExtinguisherType.Water);
         }
-        // [2] Quick-equip Dry Powder (Class ABC - Corrosive powder residue / motor damage)
         else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
         {
             EquipExtinguisherByType(ExtinguisherType.DryPowder);
         }
-        // [3] Quick-equip CO2 (Class B & Electrical - Correct approved agent)
         else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
         {
             EquipExtinguisherByType(ExtinguisherType.CO2);
@@ -260,10 +290,5 @@ public class KitchenPlayerController : MonoBehaviour
                 }
             }
         }
-    }
-
-    private void OnGUI()
-    {
-        // Rendering handled by TrainingHUD for clean unified UI matching Figma
     }
 }
