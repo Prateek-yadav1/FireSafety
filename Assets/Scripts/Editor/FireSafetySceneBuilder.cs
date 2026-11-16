@@ -113,6 +113,10 @@ public static class FireSafetySceneBuilder
         }
 
         fireGO.transform.position = new Vector3(ChimneyX, ChimneyY, ChimneyZ);
+        if (fireGO.GetComponent<FireVFXController>() == null)
+        {
+            fireGO.AddComponent<FireVFXController>();
+        }
         EditorUtility.SetDirty(fireGO);
         Debug.Log($"[FireSafetySceneBuilder] ✓ Kitchen_Fire_VFX placed at electrical chimney ({ChimneyX}, {ChimneyY}, {ChimneyZ}).");
     }
