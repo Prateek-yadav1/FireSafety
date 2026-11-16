@@ -48,6 +48,25 @@ public class KitchenPlayerController : MonoBehaviour
     private bool isMouseLookActive = true;
     private FireExtinguisher activeHeldExtinguisher;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void AutoAttachToCamera()
+    {
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+            if (cam.GetComponent<KitchenPlayerController>() == null)
+            {
+                cam.gameObject.AddComponent<KitchenPlayerController>();
+                Debug.Log("[KitchenPlayerController] ✓ Auto-attached to Main Camera. Desktop FPS controls ready.");
+            }
+            if (cam.GetComponent<TrainingHUD>() == null)
+            {
+                cam.gameObject.AddComponent<TrainingHUD>();
+                Debug.Log("[TrainingHUD] ✓ Auto-attached to Main Camera.");
+            }
+        }
+    }
+
     private void Start()
     {
         // Initialize look angles from current camera rotation
