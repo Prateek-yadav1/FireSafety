@@ -101,8 +101,8 @@ public class PowerSwitchController : MonoBehaviour
                 if (el != null) el.intensity = 0f;
             }
 
-            RenderSettings.ambientIntensity = 1.0f;
-            RenderSettings.ambientLight = new Color(0.24f, 0.25f, 0.28f);
+            RenderSettings.ambientIntensity = 1.2f;
+            RenderSettings.ambientLight = new Color(0.38f, 0.40f, 0.44f);
 
             if (exitSignController != null) exitSignController.SetNormalState();
             if (switchHandle != null) switchHandle.localEulerAngles = powerOnRotation;
@@ -126,18 +126,18 @@ public class PowerSwitchController : MonoBehaviour
                 }
             }
 
-            // Emergency visibility: soft ambient + backup lights
+            // Emergency visibility: soft ambient + backup lights (clearly visible escape & equipment)
             foreach (var el in emergencyBackupLights)
             {
                 if (el != null)
                 {
                     el.enabled = true;
-                    el.intensity = 0.18f;
+                    el.intensity = 0.85f;
                 }
             }
 
-            RenderSettings.ambientIntensity = emergencyNightAmbient;
-            RenderSettings.ambientLight = new Color(0.04f, 0.05f, 0.07f);
+            RenderSettings.ambientIntensity = 0.65f;
+            RenderSettings.ambientLight = new Color(0.22f, 0.24f, 0.28f);
 
             // Activate fire alarm (battery-backed — it stays on)
             if (fireAlarmController != null)

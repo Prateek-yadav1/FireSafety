@@ -34,11 +34,8 @@ namespace FireSafety.Environment
         private static void HideLegacyPotModels()
         {
             string[] legacyPotNames = {
-                "Sketchfab_model.003",
-                "Sketchfab_model.005",
-                "Sketchfab_model.006",
-                "pan1",
-                "Plant_Pot_Old"
+                "Plant_Pot_Old",
+                "Legacy_Pot_Old"
             };
 
             foreach (var name in legacyPotNames)

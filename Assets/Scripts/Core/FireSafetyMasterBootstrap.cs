@@ -10,21 +10,6 @@ using FireSafety.Environment;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
-
-[InitializeOnLoad]
-public static class FireSafetyEditorAutoFix
-{
-    static FireSafetyEditorAutoFix()
-    {
-        EditorApplication.delayCall += () =>
-        {
-            if (!EditorApplication.isPlayingOrWillChangePlaymode && !BuildPipeline.isBuildingPlayer)
-            {
-                FireSafetyMasterBootstrap.EnsureFullExperience();
-            }
-        };
-    }
-}
 #endif
 
 /// <summary>
@@ -47,9 +32,6 @@ public static class FireSafetyMasterBootstrap
     {
         Debug.Log("[FireSafetyMasterBootstrap] Running 1-Click Editor Fix...");
         EnsureFullExperience();
-        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-        EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
-        EditorUtility.DisplayDialog("Fire Safety VR", "Scene successfully built, wired, and saved to disk!\n\nAll extinguishers, controllers, alarm, power switch, lighting, and VR components are active in the Hierarchy.", "OK");
     }
 #endif
 
@@ -158,7 +140,7 @@ public static class FireSafetyMasterBootstrap
         {
             fireGO = new GameObject("Kitchen_Fire_VFX");
         }
-        fireGO.transform.position = new Vector3(200.55f, 2.15f, -0.80f);
+        fireGO.transform.position = new Vector3(200.18f, 1.48f, 0.17f);
         if (fireGO.GetComponent<FireVFXController>() == null)
         {
             fireGO.AddComponent<FireVFXController>();
@@ -230,7 +212,7 @@ public static class FireSafetyMasterBootstrap
         {
             GameObject boardGO = new GameObject("VR_Training_Hologram_Board");
             boardGO.transform.position = new Vector3(202.8f, 1.8f, 1.8f);
-            boardGO.transform.eulerAngles = new Vector3(0f, 180f, 0f);
+            boardGO.transform.eulerAngles = new Vector3(0f, -25f, 0f);
             boardGO.AddComponent<VRTrainingBoard>();
         }
     }
