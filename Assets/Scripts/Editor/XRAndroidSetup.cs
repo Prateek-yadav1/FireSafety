@@ -52,7 +52,23 @@ public static class XRAndroidSetup
         XRGeneralSettingsPerBuildTarget perBuildTargetSettings = null;
         if (!EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.k_SettingsKey, out perBuildTargetSettings) || perBuildTargetSettings == null)
         {
-            perBuildTargetSettings = XRGeneralSettingsPerBuildTarget.GetOrCreate();
+            string settingsPath = "Assets/XR/XRGeneralSettingsPerBuildTarget.asset";
+            perBuildTargetSettings = AssetDatabase.LoadAssetAtPath<XRGeneralSettingsPerBuildTarget>(settingsPath);
+            if (perBuildTargetSettings == null)
+            {
+                var guids = AssetDatabase.FindAssets("t:XRGeneralSettingsPerBuildTarget");
+                if (guids.Length > 0)
+                {
+                    perBuildTargetSettings = AssetDatabase.LoadAssetAtPath<XRGeneralSettingsPerBuildTarget>(AssetDatabase.GUIDToAssetPath(guids[0]));
+                }
+            }
+
+            if (perBuildTargetSettings == null)
+            {
+                perBuildTargetSettings = ScriptableObject.CreateInstance<XRGeneralSettingsPerBuildTarget>();
+                AssetDatabase.CreateAsset(perBuildTargetSettings, settingsPath);
+            }
+
             EditorBuildSettings.AddConfigObject(XRGeneralSettings.k_SettingsKey, perBuildTargetSettings, true);
         }
 
