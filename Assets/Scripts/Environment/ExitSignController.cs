@@ -58,9 +58,6 @@ public class ExitSignController : MonoBehaviour
     [SerializeField] private float faceLightRange = 0.55f;
     [SerializeField] private float downwardLightIntensity = 0.08f;
 
-    [Header("Desktop Controls")]
-    [SerializeField] private KeyCode cycleStateKey = KeyCode.X;
-
     private Material faceMaterial;
     private Material frameMaterial;
     private Material rimMaterial;
@@ -89,16 +86,7 @@ public class ExitSignController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(cycleStateKey))
-        {
-            int next = ((int)currentState + 1) % 3;
-
-            ApplyState((SignState)next);
-
-            Debug.Log(
-                "[ExitSignController] State changed to: " + currentState
-            );
-        }
+        // Controlled automatically by FireAlarm and PowerSwitch
     }
 
     // =========================================================

@@ -39,9 +39,6 @@ public class PowerSwitchController : MonoBehaviour
     [SerializeField] private AudioClip switchSound;
     private AudioSource _audioSource;
 
-    [Header("Desktop Testing")]
-    public KeyCode togglePowerKey = KeyCode.L;
-
     private bool _powerOn = true;
     private readonly Dictionary<Light, float> _storedIntensities = new Dictionary<Light, float>();
 
@@ -78,11 +75,7 @@ public class PowerSwitchController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(togglePowerKey))
-        {
-            TogglePower();
-            Debug.Log($"[PowerSwitchController] L key → Power is now {(_powerOn ? "ON" : "OFF")}");
-        }
+        // Keyboard toggle removed — all interaction via VR controllers or mouse click
     }
 
     private void OnMouseDown()

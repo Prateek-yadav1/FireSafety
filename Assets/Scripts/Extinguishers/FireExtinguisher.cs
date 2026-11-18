@@ -209,7 +209,7 @@ namespace FireSafety.Extinguishers
                 ProcessDischarge();
             }
 
-            if (enableDesktopHotkeys && isHeld)
+            if (!UnityEngine.XR.XRSettings.isDeviceActive && enableDesktopHotkeys && isHeld)
             {
                 HandleDesktopControls();
             }

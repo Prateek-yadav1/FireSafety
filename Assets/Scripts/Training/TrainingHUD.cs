@@ -565,6 +565,19 @@ public class TrainingHUD : MonoBehaviour
     // ═════════════════════════════════════════════════════════════════════════
     void OnGUI()
     {
+        // In VR Headset mode, the 3D Holographic VRTrainingBoard terminal handles all UI in world space!
+        // Suppress 2D screen-space IMGUI in VR so it doesn't appear misaligned/distorted on one eye.
+        if (UnityEngine.XR.XRSettings.isDeviceActive)
+        {
+            if (screenFadeAlpha > 0.001f)
+            {
+                GUI.color = new Color(0f, 0f, 0f, screenFadeAlpha);
+                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), GetBlackTexture());
+                GUI.color = Color.white;
+            }
+            return;
+        }
+
         // 1. Persistent Top Telemetry Bar
         DrawTelemetryBar();
 
@@ -1205,18 +1218,18 @@ public class TrainingHUD : MonoBehaviour
         float W = Screen.width, H = Screen.height;
         string hint = currentState switch
         {
-            TrainingState.WelcomeScreen            => "[Enter] / Click [START TRAINING] to begin",
-            TrainingState.SelectEnvironment        => "Click [KITCHEN] to enter the kitchen simulation",
+            TrainingState.WelcomeScreen            => "🎮 Press [A] / Trigger or Click [START TRAINING] to begin",
+            TrainingState.SelectEnvironment        => "🎮 Press [A] / Trigger or Click [KITCHEN] to enter simulation",
             TrainingState.RedirectingToKitchen     => "Redirecting to Kitchen Environment...",
-            TrainingState.KitchenBriefing          => "[Enter] / Click [BEGIN SIMULATION] to start",
-            TrainingState.FireIgnition             => "[Enter] Acknowledge fire alert",
-            TrainingState.Obj01_Alarm              => "[A] Activate Alarm  |  [T] Debug-Skip",
-            TrainingState.Obj02_PowerCut           => "[L] Cut Power  |  [T] Debug-Skip",
-            TrainingState.Obj03_SelectExtinguisher => "Look at an extinguisher or press [3] to choose CO₂",
-            TrainingState.Obj04_PASSProcedure      => "[Enter] Start Extinguishing",
-            TrainingState.Obj05_Extinguishing      => "[P] Pull Pin  →  [Hold Space] Spray CO₂ at base of chimney",
-            TrainingState.MissionComplete          => "Mission Complete! Review score and click RESTART to practice.",
-            _                                      => "[T] Skip State  |  [ESC] Cursor"
+            TrainingState.KitchenBriefing          => "🎮 Press [A] / Trigger to acknowledge briefing",
+            TrainingState.FireIgnition             => "🎮 Press [A] / Trigger to acknowledge fire alert",
+            TrainingState.Obj01_Alarm              => "🖐️ Touch Alarm with Hand or Aim Laser + Trigger  |  [A] Key",
+            TrainingState.Obj02_PowerCut           => "🖐️ Touch Power Breaker with Hand or Aim Laser + Trigger  |  [L] Key",
+            TrainingState.Obj03_SelectExtinguisher => "🖐️ Grab CO₂ Extinguisher with Hand or Aim Laser + Trigger",
+            TrainingState.Obj04_PASSProcedure      => "🎮 Press [A] / Trigger when ready to extinguish",
+            TrainingState.Obj05_Extinguishing      => "🎮 Press [A] to Pull Pin  →  Hold Right Trigger to Spray CO₂",
+            TrainingState.MissionComplete          => "🏆 Mission Complete! Press [A] / Trigger to restart.",
+            _                                      => "🎮 Controls: Left Stick: Walk | Right Stick: Turn | [A]/Trigger: Interact"
         };
 
         GUI.color = new Color(0.02f, 0.05f, 0.08f, 0.70f);

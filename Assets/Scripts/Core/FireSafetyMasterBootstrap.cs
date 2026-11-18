@@ -107,6 +107,13 @@ public static class FireSafetyMasterBootstrap
         cam.stereoTargetEye = StereoTargetEyeMask.Both;
 #endif
 
+        // ── Ensure single active AudioListener on camera to guarantee full audio audibility ──
+        var allListeners = Object.FindObjectsOfType<AudioListener>();
+        foreach (var l in allListeners)
+        {
+            if (l.gameObject != cam.gameObject) Object.DestroyImmediate(l);
+        }
+
         if (cam.GetComponent<AudioListener>() == null)
             cam.gameObject.AddComponent<AudioListener>();
         AudioListener.volume = 1.0f;
@@ -126,7 +133,13 @@ public static class FireSafetyMasterBootstrap
         if (cam.transform.parent != rigGO.transform)
         {
             cam.transform.SetParent(rigGO.transform, false);
-            cam.transform.localPosition = new Vector3(0f, 1.55f, 0.45f);
+            // VR: HMD tracking provides the head Y height automatically (floor ~0, standing ~1.6m).
+            // Desktop: We set a fixed eye height for mouse look.
+#if !UNITY_EDITOR
+            cam.transform.localPosition = new Vector3(0f, 0f, 0.45f); // VR: HMD owns Y
+#else
+            cam.transform.localPosition = new Vector3(0f, 1.55f, 0.45f); // Desktop editor
+#endif
             cam.transform.localRotation = Quaternion.identity;
         }
 
@@ -236,9 +249,9 @@ public static class FireSafetyMasterBootstrap
     {
         if (Object.FindObjectOfType<VRTrainingBoard>() != null) return;
         var go = new GameObject("VR_Training_Hologram_Board");
-        // VRTrainingBoard.Start() will set the final position and rotation
-        go.transform.position    = new Vector3(201.75f, 1.55f, 1.35f);
-        go.transform.eulerAngles = new Vector3(0f, 155f, 0f);
+        // Starts in Room 01 directly facing the trainee at eye level
+        go.transform.position    = new Vector3(0f, 1.48f, 1.65f);
+        go.transform.eulerAngles = new Vector3(0f, 180f, 0f);
         go.AddComponent<VRTrainingBoard>();
     }
 

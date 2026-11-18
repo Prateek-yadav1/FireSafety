@@ -2,18 +2,12 @@ using UnityEngine;
 using FireSafety.Extinguishers;
 using FireSafety.Fire;
 using FireSafety.Training;
+using UnityEngine.XR;
 
 /// <summary>
-/// KitchenPlayerController — Rock-solid Desktop (WASD + 360° mouse look) controller.
-/// Supports both Room 01 (Orientation Studio at 0,0,0) and Room 02 (Kitchen at 202.8,0,0).
-///
-/// Architecture:
-///   VR_Player_Rig (at floor level, holds yaw rotation)
-///     └── Main Camera  (local Y=1.55m-1.6m eye height, holds pitch rotation)
-///
-/// Movement: WASD moves in the horizontal XZ plane within current room bounds.
-/// Look:     Mouse X rotates Yaw (360°), Mouse Y tilts Pitch (-75° to +80°).
-///           Q/E and Arrow keys provide guaranteed keyboard turning backup.
+/// KitchenPlayerController — Desktop (WASD + 360° mouse look) controller.
+/// In VR mode, locomotion and look are fully handled by VRControllerManager.
+/// This script only handles Desktop mode; it gracefully yields in VR.
 /// </summary>
 public class KitchenPlayerController : MonoBehaviour
 {
@@ -50,9 +44,10 @@ public class KitchenPlayerController : MonoBehaviour
     private Transform _cam;        // Main Camera child — holds pitch at eye height
 
     // State
-    private float _yaw   = 0f;     // starts facing forward (+Z in Room 01, -X in Kitchen)
+    private float _yaw   = 0f;
     private float _pitch = 0f;
     private bool  _cursorLocked = false;
+    private bool  _isVR = false;
 
     // Held extinguisher
     private FireExtinguisher _heldExt = null;
@@ -68,9 +63,10 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void Start()
     {
+        _isVR = XRSettings.isDeviceActive;
         BuildRigHierarchy();
-        LockCursor(true);
-        Debug.Log($"[KitchenPlayerController] Started. InKitchen={IsInKitchen}, Rig={_rig?.position}");
+        if (!_isVR) LockCursor(true);
+        Debug.Log($"[KitchenPlayerController] Started. VR={_isVR}, InKitchen={IsInKitchen}, Rig={_rig?.position}");
     }
 
     private void BuildRigHierarchy()
@@ -80,13 +76,9 @@ public class KitchenPlayerController : MonoBehaviour
         if (mainCam == null) mainCam = FindObjectOfType<Camera>();
 
         if (mainCam != null)
-        {
             _cam = mainCam.transform;
-        }
         else
-        {
             _cam = transform;
-        }
 
         GameObject rigGO = GameObject.Find("VR_Player_Rig");
         if (rigGO == null)
@@ -100,28 +92,36 @@ public class KitchenPlayerController : MonoBehaviour
         if (_cam != null && _cam.parent != _rig)
         {
             _cam.SetParent(_rig, false);
-            _cam.localPosition = new Vector3(0f, EyeHeight, IsInKitchen ? 0f : 0.45f);
+            // VR: HMD reports head Y position natively — do NOT add fixed EyeHeight offset (causes camera on roof!)
+            // Desktop: set fixed eye height for WASD+mouse play
+            if (XRSettings.isDeviceActive)
+                _cam.localPosition = new Vector3(0f, 0f, IsInKitchen ? 0f : 0.45f);
+            else
+                _cam.localPosition = new Vector3(0f, EyeHeight, IsInKitchen ? 0f : 0.45f);
             _cam.localRotation = Quaternion.identity;
         }
 
         _yaw   = _rig.eulerAngles.y;
         _pitch = 0f;
-        ApplyRotation();
+
+        // Only apply desktop rotation on startup if NOT in VR
+        if (!XRSettings.isDeviceActive)
+            ApplyRotation();
     }
 
     // ─── Update Loop ──────────────────────────────────────────────────────────
 
     private void Update()
     {
+        _isVR = XRSettings.isDeviceActive;
+
+        // In VR mode, skip ALL keyboard/mouse input — VRControllerManager handles everything
+        if (_isVR) return;
+
         HandleCursorLock();
         HandleLook();
         HandleMovement();
-        HandleHotkeys();
-        HandleExtinguisherSpray();
-        TrackHeldExtinguisher();
-
-        if (_heldExt == null)
-            HandleRaycastInteract();
+        HandleDesktopInteraction();
     }
 
     private void LateUpdate()
@@ -130,121 +130,80 @@ public class KitchenPlayerController : MonoBehaviour
         Transform target = _rig != null ? _rig : transform;
         if (target.position.y < -5f)
         {
-            target.position = IsInKitchen ? new Vector3(202.8f, 0f, 0f) : Vector3.zero;
+            Vector3 p = target.position;
+            p.y = 0f;
+            target.position = p;
         }
     }
 
-    // ─── Cursor Management ───────────────────────────────────────────────────
-
-    public void LockCursor(bool locked)
-    {
-        _cursorLocked    = locked;
-        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
-        Cursor.visible   = !locked;
-    }
+    // ─── Cursor Lock ──────────────────────────────────────────────────────────
 
     private void HandleCursorLock()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            LockCursor(!_cursorLocked);
-            return;
-        }
-
-        // Clicking into game view locks cursor for smooth mouse look
-        if (!_cursorLocked && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)))
-        {
+            LockCursor(false);
+        else if (Input.GetMouseButtonDown(0) && !_cursorLocked)
             LockCursor(true);
-        }
     }
 
-    // ─── 360° Look (Mouse + Keyboard Q/E) ────────────────────────────────────
+    private void LockCursor(bool locked)
+    {
+        _cursorLocked = locked;
+        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible   = !locked;
+    }
+
+    // ─── Desktop Look ─────────────────────────────────────────────────────────
 
     private void HandleLook()
     {
-        bool isVR = UnityEngine.XR.XRSettings.isDeviceActive;
-
-        // Mouse look is active for desktop play when cursor is locked or mouse buttons held
-        if (!isVR && (_cursorLocked || Input.GetMouseButton(0) || Input.GetMouseButton(1)))
+        // Mouse look (Desktop only)
+        if (_cursorLocked)
         {
-            float mx = Input.GetAxis("Mouse X");
-            float my = Input.GetAxis("Mouse Y");
-
-            _yaw   += mx * mouseSensitivity;
-            _pitch -= my * mouseSensitivity;
+            _yaw   += Input.GetAxis("Mouse X") * mouseSensitivity;
+            _pitch -= Input.GetAxis("Mouse Y") * mouseSensitivity;
+            _pitch  = Mathf.Clamp(_pitch, minPitch, maxPitch);
         }
 
-        // Keyboard turn: Q/E or Left/Right arrows always active as backup
-        float kbTurn = 0f;
-        if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow))  kbTurn -= 1f;
-        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) kbTurn += 1f;
-        _yaw += kbTurn * keyboardTurnSpeed * Time.deltaTime;
+        // Keyboard turn fallback (Desktop only)
+        float keyTurn = 0f;
+        if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow))  keyTurn = -1f;
+        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) keyTurn =  1f;
+        _yaw += keyTurn * keyboardTurnSpeed * Time.deltaTime;
 
-        _pitch = Mathf.Clamp(_pitch, minPitch, maxPitch);
         ApplyRotation();
     }
 
     private void ApplyRotation()
     {
         if (_rig != null)
-        {
-            _rig.rotation = Quaternion.Euler(0f, _yaw, 0f);
-        }
-
-        // In VR, the Meta Quest HMD natively drives 6-DoF camera rotation (Pitch, Yaw, Roll).
-        // Overwriting localRotation breaks physical head tracking! Only set it on desktop.
-        bool isVR = UnityEngine.XR.XRSettings.isDeviceActive;
-        if (!isVR)
-        {
-            if (_cam != null)
-            {
-                _cam.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
-            }
-            else
-            {
-                transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
-            }
-        }
+            _rig.localRotation = Quaternion.Euler(0f, _yaw, 0f);
+        if (_cam != null)
+            _cam.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
     }
 
-    // ─── Movement (WASD + Arrow Keys) ─────────────────────────────────────────
+    // ─── Desktop Movement ─────────────────────────────────────────────────────
 
     private void HandleMovement()
     {
-        float speed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : moveSpeed;
+        bool sprint = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        float speed = sprint ? sprintSpeed : moveSpeed;
 
-        float fwd  = 0f;
-        float side = 0f;
+        float h = Input.GetAxis("Horizontal"); // A/D or Left/Right
+        float v = Input.GetAxis("Vertical");   // W/S or Up/Down
 
-        // Direct KeyCode checks (guarantees 100% responsiveness)
-        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))   fwd  += 1f;
-        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) fwd  -= 1f;
-        if (Input.GetKey(KeyCode.A))                                     side -= 1f;
-        if (Input.GetKey(KeyCode.D))                                     side += 1f;
+        if (Mathf.Abs(h) < 0.01f && Mathf.Abs(v) < 0.01f) return;
 
-        // Add standard Axis input
-        fwd  += Input.GetAxisRaw("Vertical");
-        side += Input.GetAxisRaw("Horizontal");
+        Transform anchor = _rig != null ? _rig : transform;
+        Vector3 forward  = anchor.forward;
+        Vector3 right    = anchor.right;
+        forward.y = 0f; right.y = 0f;
+        forward.Normalize(); right.Normalize();
 
-        fwd  = Mathf.Clamp(fwd, -1f, 1f);
-        side = Mathf.Clamp(side, -1f, 1f);
+        Vector3 move = (forward * v + right * h).normalized * speed * Time.deltaTime;
+        Vector3 newPos = anchor.position + move;
 
-        if (Mathf.Abs(fwd) < 0.01f && Mathf.Abs(side) < 0.01f) return;
-
-        // Move relative to camera horizontal heading
-        Transform basis = _cam != null ? _cam : (_rig != null ? _rig : transform);
-        Vector3 camFwd   = basis.forward;
-        Vector3 camRight = basis.right;
-
-        camFwd.y = 0f;   camFwd.Normalize();
-        camRight.y = 0f; camRight.Normalize();
-
-        Vector3 move = (camFwd * fwd + camRight * side).normalized * (speed * Time.deltaTime);
-
-        Transform targetToMove = _rig != null ? _rig : transform;
-        Vector3 newPos = targetToMove.position + move;
-
-        // Clamp within current room boundaries
+        // Clamp to room bounds
         if (IsInKitchen)
         {
             newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
@@ -255,95 +214,24 @@ public class KitchenPlayerController : MonoBehaviour
             newPos.x = Mathf.Clamp(newPos.x, Room01MinX, Room01MaxX);
             newPos.z = Mathf.Clamp(newPos.z, Room01MinZ, Room01MaxZ);
         }
-
-        targetToMove.position = new Vector3(newPos.x, targetToMove.position.y, newPos.z);
+        newPos.y = 0f;
+        anchor.position = newPos;
     }
 
-    // ─── Hotkeys & Interaction ────────────────────────────────────────────────
+    // ─── Desktop-only Interaction (F key / mouse click) ───────────────────────
 
-    private void HandleHotkeys()
+    private void HandleDesktopInteraction()
     {
-        // Extinguishers [1], [2], [3]
-        if (Input.GetKeyDown(KeyCode.Alpha1)) QuickEquip(ExtinguisherType.Water);
-        if (Input.GetKeyDown(KeyCode.Alpha2)) QuickEquip(ExtinguisherType.DryPowder);
-        if (Input.GetKeyDown(KeyCode.Alpha3)) QuickEquip(ExtinguisherType.CO2);
-
-        // Fire Alarm toggle [A] (only fires on new key down when in kitchen and not strafing)
-        if (IsInKitchen && Input.GetKeyDown(KeyCode.A) && !Input.GetKey(KeyCode.LeftShift))
+        // Extinguisher spray via mouse (desktop fallback only)
+        if (_heldExt != null)
         {
-            var alarm = FindObjectOfType<FireAlarmController>();
-            if (alarm != null) alarm.ToggleAlarm();
+            if (_cursorLocked && Input.GetMouseButton(0))
+                _heldExt.SqueezeHandle();
+            else
+                _heldExt.ReleaseHandle();
         }
 
-        // Power Switch toggle [L]
-        if (IsInKitchen && Input.GetKeyDown(KeyCode.L))
-        {
-            var psw = FindObjectOfType<PowerSwitchController>();
-            if (psw != null) psw.TogglePower();
-        }
-
-        // Debug-Skip current objective [T]
-        if (Input.GetKeyDown(KeyCode.T))
-        {
-            var hud = FindObjectOfType<TrainingHUD>();
-            if (hud != null) hud.DebugSkipObjective();
-        }
-    }
-
-    private void QuickEquip(ExtinguisherType type)
-    {
-        Transform hand = _cam != null ? _cam : transform;
-        var all = FindObjectsOfType<FireExtinguisher>();
-
-        foreach (var ext in all)
-        {
-            if (ext.Type == type)
-            {
-                if (_heldExt != null && _heldExt != ext)
-                    _heldExt.Drop();
-
-                ext.Pickup(hand);
-                _heldExt = ext;
-
-                var hud = FindObjectOfType<TrainingHUD>();
-                if (hud != null) hud.OnExtinguisherSelected(type);
-
-                Debug.Log($"[KitchenPlayerController] Equipped: {type}");
-                return;
-            }
-        }
-    }
-
-    // ─── Extinguisher Spray ───────────────────────────────────────────────────
-
-    private void HandleExtinguisherSpray()
-    {
-        if (_heldExt == null) return;
-
-        // Pull pin [P]
-        if (Input.GetKeyDown(KeyCode.P))
-            _heldExt.PullSafetyPin();
-
-        // Squeeze handle: Space or Left Mouse
-        bool squeezing = Input.GetKey(KeyCode.Space) ||
-                         (_cursorLocked && Input.GetMouseButton(0));
-
-        if (squeezing)
-            _heldExt.SqueezeHandle();
-        else
-            _heldExt.ReleaseHandle();
-    }
-
-    private void TrackHeldExtinguisher()
-    {
-        if (_heldExt != null && !_heldExt.IsHeld)
-            _heldExt = null;
-    }
-
-    // ─── Raycast Interaction ([F] or Click on objects) ────────────────────────
-
-    private void HandleRaycastInteract()
-    {
+        // Raycast interact: F key or left click
         bool doInteract = Input.GetKeyDown(KeyCode.F) ||
                           (_cursorLocked && Input.GetMouseButtonDown(0));
         if (!doInteract) return;
@@ -398,7 +286,7 @@ public class KitchenPlayerController : MonoBehaviour
         target.position = safe;
         _yaw   = yaw;
         _pitch = 0f;
-        ApplyRotation();
+        if (!_isVR) ApplyRotation();
 
         Debug.Log($"[KitchenPlayerController] Teleported to {safe}, yaw={yaw}°");
     }

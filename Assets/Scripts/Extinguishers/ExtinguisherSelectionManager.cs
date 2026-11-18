@@ -48,6 +48,8 @@ namespace FireSafety.Extinguishers
 
         private void Update()
         {
+            if (UnityEngine.XR.XRSettings.isDeviceActive) return;
+
             // Desktop quick cycling hotkeys for testing
             if (Input.GetKeyDown(KeyCode.E))
             {

@@ -46,9 +46,6 @@ public class FireAlarmController : MonoBehaviour
     [SerializeField] private ExitSignController exitSignController;
     [SerializeField] private PowerSwitchController powerSwitchController;
 
-    [Header("Desktop Test Controls")]
-    [SerializeField] private KeyCode toggleAlarmKey = KeyCode.A;
-
     private bool isAlarmActive = false;
 
     private AudioSource audioSource;
@@ -96,8 +93,7 @@ public class FireAlarmController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(toggleAlarmKey))
-            ToggleAlarm();
+        // Keyboard toggle removed — all interaction via VR controllers or mouse click
     }
 
     private void OnMouseDown()

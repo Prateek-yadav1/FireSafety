@@ -22,20 +22,18 @@ public static class XRAndroidSetup
         Debug.Log("[XRAndroidSetup] === Configuring XR Plug-in Management for Meta Quest ===");
 
         // 1. Ensure PlayerSettings for Android (Quest requirements)
-        PlayerSettings.Android.minSdkVersion = (AndroidSdkVersions)26; // Android 8.0+ required by Quest
-        PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64; // 64-bit required
+        PlayerSettings.Android.minSdkVersion = (AndroidSdkVersions)26;
+        PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
 
-        // 2. Configure Oculus Settings (Enable Quest 2, Quest 3, Quest Pro)
+        // 2. Configure Oculus Settings
         string oculusSettingsPath = "Assets/XR/Settings/OculusSettings.asset";
         OculusSettings oculusSettings = AssetDatabase.LoadAssetAtPath<OculusSettings>(oculusSettingsPath);
         if (oculusSettings == null)
         {
             var guids = AssetDatabase.FindAssets("t:OculusSettings");
             if (guids.Length > 0)
-            {
                 oculusSettings = AssetDatabase.LoadAssetAtPath<OculusSettings>(AssetDatabase.GUIDToAssetPath(guids[0]));
-            }
         }
 
         if (oculusSettings != null)
@@ -48,40 +46,34 @@ public static class XRAndroidSetup
             Debug.Log("[XRAndroidSetup] ✓ Enabled Quest 2, Quest 3, and Quest Pro in OculusSettings.");
         }
 
-        // 3. Get or Create XRGeneralSettingsPerBuildTarget
+        // 3. Get XRGeneralSettingsPerBuildTarget from EditorBuildSettings
         XRGeneralSettingsPerBuildTarget perBuildTargetSettings = null;
-        if (!EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.k_SettingsKey, out perBuildTargetSettings) || perBuildTargetSettings == null)
+        EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.k_SettingsKey, out perBuildTargetSettings);
+
+        if (perBuildTargetSettings == null)
         {
+            // Try to load from asset database
             string settingsPath = "Assets/XR/XRGeneralSettingsPerBuildTarget.asset";
             perBuildTargetSettings = AssetDatabase.LoadAssetAtPath<XRGeneralSettingsPerBuildTarget>(settingsPath);
+
             if (perBuildTargetSettings == null)
             {
                 var guids = AssetDatabase.FindAssets("t:XRGeneralSettingsPerBuildTarget");
                 if (guids.Length > 0)
-                {
                     perBuildTargetSettings = AssetDatabase.LoadAssetAtPath<XRGeneralSettingsPerBuildTarget>(AssetDatabase.GUIDToAssetPath(guids[0]));
-                }
             }
 
             if (perBuildTargetSettings == null)
             {
-                perBuildTargetSettings = ScriptableObject.CreateInstance<XRGeneralSettingsPerBuildTarget>();
-                AssetDatabase.CreateAsset(perBuildTargetSettings, settingsPath);
+                Debug.Log("[XRAndroidSetup] XRGeneralSettingsPerBuildTarget not found — please configure XR Plug-in Management via Edit > Project Settings > XR Plug-in Management.");
+                return;
             }
 
             EditorBuildSettings.AddConfigObject(XRGeneralSettings.k_SettingsKey, perBuildTargetSettings, true);
         }
 
-        if (perBuildTargetSettings == null)
-        {
-            Debug.LogError("[XRAndroidSetup] Could not create or find XRGeneralSettingsPerBuildTarget.");
-            return;
-        }
-
-        // 4. Configure Android XR Loader
+        // 4. Configure Android and Standalone build target groups
         ConfigureTargetGroup(perBuildTargetSettings, BuildTargetGroup.Android);
-
-        // 5. Configure Standalone XR Loader
         ConfigureTargetGroup(perBuildTargetSettings, BuildTargetGroup.Standalone);
 
         EditorUtility.SetDirty(perBuildTargetSettings);
@@ -92,33 +84,28 @@ public static class XRAndroidSetup
 
     private static void ConfigureTargetGroup(XRGeneralSettingsPerBuildTarget perBuildTarget, BuildTargetGroup group)
     {
+        // Get existing XR general settings for this platform group
         XRGeneralSettings settings = perBuildTarget.SettingsForBuildTarget(group);
+
         if (settings == null)
         {
-            perBuildTarget.CreateDefaultSettingsForBuildTarget(group);
-            settings = perBuildTarget.SettingsForBuildTarget(group);
+            // Settings not configured — log and skip
+            Debug.LogWarning($"[XRAndroidSetup] No XR settings for {group} — configure manually via Edit > Project Settings > XR Plug-in Management.");
+            return;
         }
 
-        if (settings != null)
+        settings.InitManagerOnStart = true;
+
+        if (settings.Manager != null)
         {
-            settings.InitManagerOnStart = true;
-
-            if (settings.Manager == null)
-            {
-                perBuildTarget.CreateDefaultManagerSettingsForBuildTarget(group);
-            }
-
-            if (settings.Manager != null)
-            {
-                // Ensure OculusLoader is assigned
-                string loaderTypeName = "Unity.XR.Oculus.OculusLoader";
-                XRPackageMetadataStore.AssignLoader(settings.Manager, loaderTypeName, group);
-                EditorUtility.SetDirty(settings.Manager);
-            }
-
-            EditorUtility.SetDirty(settings);
-            Debug.Log($"[XRAndroidSetup] ✓ Configured XR settings for {group}");
+            // Assign the OculusLoader if not already assigned
+            string loaderTypeName = "Unity.XR.Oculus.OculusLoader";
+            XRPackageMetadataStore.AssignLoader(settings.Manager, loaderTypeName, group);
+            EditorUtility.SetDirty(settings.Manager);
         }
+
+        EditorUtility.SetDirty(settings);
+        Debug.Log($"[XRAndroidSetup] ✓ Configured XR settings for {group}");
     }
 
     [MenuItem("FireSafety/🚀 1-Click Build Quest APK", priority = 10)]
@@ -147,7 +134,7 @@ public static class XRAndroidSetup
         else
         {
             Debug.LogError($"[XRAndroidSetup] ❌ APK Build Failed with {report.summary.totalErrors} errors.");
-            EditorUtility.DisplayDialog("Build Failed", $"APK Build failed. Check the Unity Console for details.", "OK");
+            EditorUtility.DisplayDialog("Build Failed", "APK Build failed. Check the Unity Console for details.", "OK");
         }
     }
 }
