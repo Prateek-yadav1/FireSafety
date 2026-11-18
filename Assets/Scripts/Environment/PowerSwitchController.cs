@@ -5,11 +5,13 @@ using FireSafety.Fire;
 /// <summary>
 /// Controls the main electrical power switch in the kitchen simulation.
 ///
-/// Requirement:
-///   - BEFORE cutting off main power supply: proper, warm, well-lit ambient & ceiling fixture illumination.
-///   - AFTER cutting off main power supply: room turns into a realistic emergency blackout with just
-///     sufficient ambient/emergency visibility (emergency backlights, moonlight, EXIT sign glow, fire alarm strobe).
+/// Features:
+///   - 3D wall-mounted industrial circuit breaker enclosure with rotatable switch handle
+///   - BoxCollider for direct VR hand proximity touch and laser interaction
+///   - Tactile mechanical breaker click / clunk audio feedback
+///   - Proper warm room lighting when ON, emergency blackout with battery-backed safety fixtures when OFF
 /// </summary>
+[RequireComponent(typeof(AudioSource))]
 public class PowerSwitchController : MonoBehaviour
 {
     [Header("Cross-System References")]
@@ -26,12 +28,16 @@ public class PowerSwitchController : MonoBehaviour
 
     [Header("Emergency Blackout Light Level")]
     [Range(0f, 1f)]
-    [SerializeField] private float emergencyNightAmbient = 0.65f; // Clear visibility to see equipment, exits, and fire
+    [SerializeField] private float emergencyNightAmbient = 0.65f;
 
     [Header("Switch Visual Handle")]
     public Transform switchHandle;
-    public Vector3 powerOnRotation = new Vector3(0f, 0f, -30f);
-    public Vector3 powerOffRotation = new Vector3(0f, 0f, 30f);
+    public Vector3 powerOnRotation  = new Vector3(0f, 0f, -35f);
+    public Vector3 powerOffRotation = new Vector3(0f, 0f,  35f);
+
+    [Header("Audio")]
+    [SerializeField] private AudioClip switchSound;
+    private AudioSource _audioSource;
 
     [Header("Desktop Testing")]
     public KeyCode togglePowerKey = KeyCode.L;
@@ -39,14 +45,22 @@ public class PowerSwitchController : MonoBehaviour
     private bool _powerOn = true;
     private readonly Dictionary<Light, float> _storedIntensities = new Dictionary<Light, float>();
 
+    private TextMesh _statusTextMesh;
+
     public System.Action<bool> OnPowerStateChanged;
     public bool IsPowerOn => _powerOn;
+
+    private void Awake()
+    {
+        SetupAudio();
+        BuildVisualStationIfNeeded();
+    }
 
     private void Start()
     {
         if (fireAlarmController == null) fireAlarmController = FindObjectOfType<FireAlarmController>();
-        if (exitSignController == null) exitSignController = FindObjectOfType<ExitSignController>();
-        if (fireVFXController == null) fireVFXController = FindObjectOfType<FireVFXController>();
+        if (exitSignController == null) exitSignController   = FindObjectOfType<ExitSignController>();
+        if (fireVFXController == null) fireVFXController     = FindObjectOfType<FireVFXController>();
 
         EnsureKitchenLightingFixtures();
 
@@ -66,9 +80,14 @@ public class PowerSwitchController : MonoBehaviour
     {
         if (Input.GetKeyDown(togglePowerKey))
         {
-            SetPower(!_powerOn);
+            TogglePower();
             Debug.Log($"[PowerSwitchController] L key → Power is now {(_powerOn ? "ON" : "OFF")}");
         }
+    }
+
+    private void OnMouseDown()
+    {
+        TogglePower();
     }
 
     public void TogglePower() => SetPower(!_powerOn);
@@ -77,6 +96,14 @@ public class PowerSwitchController : MonoBehaviour
     {
         if (_powerOn == on) return;
         _powerOn = on;
+
+        // Play breaker clunk audio
+        if (_audioSource != null && switchSound != null)
+        {
+            _audioSource.pitch = on ? 1.05f : 0.95f;
+            _audioSource.PlayOneShot(switchSound, 1.0f);
+        }
+
         ApplyPowerState(on);
         OnPowerStateChanged?.Invoke(_powerOn);
     }
@@ -106,17 +133,17 @@ public class PowerSwitchController : MonoBehaviour
 
             if (exitSignController != null) exitSignController.SetNormalState();
             if (switchHandle != null) switchHandle.localEulerAngles = powerOnRotation;
+            if (_statusTextMesh != null) { _statusTextMesh.text = "POWER: ON"; _statusTextMesh.color = Color.green; }
+
             Debug.Log("[PowerSwitchController] Proper room illumination ACTIVE.");
         }
         else
         {
             // Power CUT: Shut down primary overhead fixtures ONLY
-            // (DO NOT touch fire alarm strobe or exit sign — both are battery-backed)
             foreach (Light l in primaryRoomLights)
             {
                 if (l != null)
                 {
-                    // Skip any light belonging to the alarm or exit sign
                     string lName = l.gameObject.name.ToLower();
                     if (lName.Contains("strobe") || lName.Contains("alarm") || lName.Contains("exit") || lName.Contains("emergency"))
                         continue;
@@ -126,7 +153,7 @@ public class PowerSwitchController : MonoBehaviour
                 }
             }
 
-            // Emergency visibility: soft ambient + backup lights (clearly visible escape & equipment)
+            // Emergency visibility: soft ambient + backup lights
             foreach (var el in emergencyBackupLights)
             {
                 if (el != null)
@@ -139,13 +166,13 @@ public class PowerSwitchController : MonoBehaviour
             RenderSettings.ambientIntensity = emergencyNightAmbient;
             RenderSettings.ambientLight = new Color(0.22f, 0.24f, 0.28f);
 
-            // Activate fire alarm (battery-backed — it stays on)
+            // Activate fire alarm (battery-backed)
             if (fireAlarmController != null)
             {
                 if (!fireAlarmController.IsAlarmActive)
                     fireAlarmController.ActivateAlarm();
                 else
-                    fireAlarmController.OnMainPowerCut(); // Ensure strobe keeps running
+                    fireAlarmController.OnMainPowerCut();
             }
 
             // EXIT sign: emergency battery backup (stays GREEN)
@@ -153,8 +180,121 @@ public class PowerSwitchController : MonoBehaviour
                 exitSignController.SetEmergencyBackupState();
 
             if (switchHandle != null) switchHandle.localEulerAngles = powerOffRotation;
+            if (_statusTextMesh != null) { _statusTextMesh.text = "POWER: CUT"; _statusTextMesh.color = Color.red; }
+
             Debug.Log("[PowerSwitchController] Power CUT — Room darkened. Alarm & EXIT sign on battery backup.");
         }
+    }
+
+    // ─── Visual Enclosure & Collider Setup ───────────────────────────────────
+
+    private void BuildVisualStationIfNeeded()
+    {
+        if (transform.Find("BreakerBox") != null) return;
+
+        // Position on kitchen wall if default
+        if (transform.position == Vector3.zero)
+        {
+            transform.position = new Vector3(204.99f, 1.50f, 3.52f);
+            transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+        }
+
+        Shader litShader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+
+        // 1. Outer Box Enclosure (Dark industrial steel)
+        var boxMat = new Material(litShader);
+        boxMat.color = new Color(0.20f, 0.22f, 0.24f);
+        boxMat.SetFloat("_Metallic", 0.65f);
+        boxMat.SetFloat("_Smoothness", 0.45f);
+
+        GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        box.name = "BreakerBox";
+        box.transform.SetParent(transform, false);
+        box.transform.localPosition = Vector3.zero;
+        box.transform.localScale = new Vector3(0.22f, 0.32f, 0.08f);
+        Destroy(box.GetComponent<Collider>());
+        box.GetComponent<Renderer>().sharedMaterial = boxMat;
+
+        // 2. Yellow hazard panel insert
+        var panelMat = new Material(litShader);
+        panelMat.color = new Color(0.85f, 0.72f, 0.12f);
+        GameObject panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        panel.name = "HazardPanel";
+        panel.transform.SetParent(box.transform, false);
+        panel.transform.localPosition = new Vector3(0f, 0f, 0.52f);
+        panel.transform.localScale = new Vector3(0.85f, 0.85f, 0.05f);
+        Destroy(panel.GetComponent<Collider>());
+        panel.GetComponent<Renderer>().sharedMaterial = panelMat;
+
+        // 3. Red Switch Lever
+        var handleMat = new Material(litShader);
+        handleMat.color = new Color(0.85f, 0.08f, 0.08f);
+        GameObject lever = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        lever.name = "BreakerLever";
+        lever.transform.SetParent(box.transform, false);
+        lever.transform.localPosition = new Vector3(0f, 0f, 0.60f);
+        lever.transform.localScale = new Vector3(0.22f, 0.50f, 0.25f);
+        lever.transform.localEulerAngles = powerOnRotation;
+        Destroy(lever.GetComponent<Collider>());
+        lever.GetComponent<Renderer>().sharedMaterial = handleMat;
+        switchHandle = lever.transform;
+
+        // 4. Status Text
+        GameObject textGO = new GameObject("StatusText");
+        textGO.transform.SetParent(box.transform, false);
+        textGO.transform.localPosition = new Vector3(0f, 0.55f, 0.55f);
+        textGO.transform.localRotation = Quaternion.identity;
+        _statusTextMesh = textGO.AddComponent<TextMesh>();
+        _statusTextMesh.text = "POWER: ON";
+        _statusTextMesh.characterSize = 0.022f;
+        _statusTextMesh.fontSize = 48;
+        _statusTextMesh.alignment = TextAlignment.Center;
+        _statusTextMesh.anchor = TextAnchor.MiddleCenter;
+        _statusTextMesh.color = Color.green;
+
+        // 5. Interaction Collider
+        BoxCollider boxCol = GetComponent<BoxCollider>();
+        if (boxCol == null) boxCol = gameObject.AddComponent<BoxCollider>();
+        boxCol.size = new Vector3(0.26f, 0.36f, 0.18f);
+        boxCol.center = Vector3.zero;
+    }
+
+    // ─── Audio Setup ──────────────────────────────────────────────────────────
+
+    private void SetupAudio()
+    {
+        _audioSource = GetComponent<AudioSource>();
+        if (_audioSource == null) _audioSource = gameObject.AddComponent<AudioSource>();
+
+        _audioSource.loop = false;
+        _audioSource.playOnAwake = false;
+        _audioSource.volume = 1.0f;
+        _audioSource.spatialBlend = 0.5f;
+        _audioSource.minDistance = 1.0f;
+        _audioSource.maxDistance = 25f;
+
+        if (switchSound == null)
+        {
+            switchSound = CreateBreakerClip();
+        }
+    }
+
+    private static AudioClip CreateBreakerClip()
+    {
+        int sampleRate = 44100;
+        int samples = (int)(sampleRate * 0.22f);
+        float[] data = new float[samples];
+        for (int i = 0; i < samples; i++)
+        {
+            float t = (float)i / sampleRate;
+            float click = Mathf.Sin(2f * Mathf.PI * 1800f * t) * Mathf.Exp(-t * 80f);
+            float thud  = Mathf.Sin(2f * Mathf.PI * 130f  * t) * Mathf.Exp(-t * 22f);
+            float snap  = (Random.value * 2f - 1f) * Mathf.Exp(-t * 120f) * 0.4f;
+            data[i] = Mathf.Clamp(click * 0.6f + thud * 0.7f + snap, -1f, 1f);
+        }
+        AudioClip clip = AudioClip.Create("Breaker_Switch_Clunk", samples, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
     }
 
     /// <summary>
@@ -174,7 +314,7 @@ public class PowerSwitchController : MonoBehaviour
             light1Obj.transform.position = new Vector3(202.45f, 2.60f, 0.0f);
             Light l1 = light1Obj.AddComponent<Light>();
             l1.type = LightType.Point;
-            l1.color = new Color(1.0f, 0.96f, 0.88f); // Warm halogen / LED ceiling light
+            l1.color = new Color(1.0f, 0.96f, 0.88f);
             l1.intensity = 1.4f;
             l1.range = 7.5f;
             primaryRoomLights.Add(l1);
@@ -201,25 +341,25 @@ public class PowerSwitchController : MonoBehaviour
             l3.range = 5.0f;
             primaryRoomLights.Add(l3);
 
-            // Emergency Dim Backup Light (Simulates low ambient moonlight / emergency battery LED)
+            // Emergency Dim Backup Light
             GameObject emergLightObj = new GameObject("Emergency_Ambient_NightLight");
             emergLightObj.transform.SetParent(lightingRoot.transform, false);
             emergLightObj.transform.position = new Vector3(202.45f, 2.30f, 0.0f);
             Light el = emergLightObj.AddComponent<Light>();
             el.type = LightType.Point;
-            el.color = new Color(0.40f, 0.55f, 0.75f); // Cool moonlight
-            el.intensity = 0f; // off until power cut
+            el.color = new Color(0.40f, 0.55f, 0.75f);
+            el.intensity = 0f;
             el.range = 9.0f;
             emergencyBackupLights.Add(el);
 
-            // Emergency Exit Area Light — faint green glow near exit door (from EXIT sign battery backup)
+            // Emergency Exit Area Light
             GameObject emergExitLightObj = new GameObject("Emergency_Exit_AreaLight");
             emergExitLightObj.transform.SetParent(lightingRoot.transform, false);
             emergExitLightObj.transform.position = new Vector3(199.45f, 2.00f, 0.08f);
             Light el2 = emergExitLightObj.AddComponent<Light>();
             el2.type = LightType.Point;
-            el2.color = new Color(0.1f, 0.9f, 0.4f); // Green from EXIT sign halo
-            el2.intensity = 0f; // off until power cut
+            el2.color = new Color(0.1f, 0.9f, 0.4f);
+            el2.intensity = 0f;
             el2.range = 3.5f;
             emergencyBackupLights.Add(el2);
         }

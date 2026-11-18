@@ -162,8 +162,10 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleLook()
     {
-        // Mouse look active when cursor is locked OR when either mouse button is held
-        if (_cursorLocked || Input.GetMouseButton(0) || Input.GetMouseButton(1))
+        bool isVR = UnityEngine.XR.XRSettings.isDeviceActive;
+
+        // Mouse look is active for desktop play when cursor is locked or mouse buttons held
+        if (!isVR && (_cursorLocked || Input.GetMouseButton(0) || Input.GetMouseButton(1)))
         {
             float mx = Input.GetAxis("Mouse X");
             float my = Input.GetAxis("Mouse Y");
@@ -172,7 +174,7 @@ public class KitchenPlayerController : MonoBehaviour
             _pitch -= my * mouseSensitivity;
         }
 
-        // Keyboard turn: Q/E or Left/Right arrows always active
+        // Keyboard turn: Q/E or Left/Right arrows always active as backup
         float kbTurn = 0f;
         if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow))  kbTurn -= 1f;
         if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) kbTurn += 1f;
@@ -188,13 +190,20 @@ public class KitchenPlayerController : MonoBehaviour
         {
             _rig.rotation = Quaternion.Euler(0f, _yaw, 0f);
         }
-        if (_cam != null)
+
+        // In VR, the Meta Quest HMD natively drives 6-DoF camera rotation (Pitch, Yaw, Roll).
+        // Overwriting localRotation breaks physical head tracking! Only set it on desktop.
+        bool isVR = UnityEngine.XR.XRSettings.isDeviceActive;
+        if (!isVR)
         {
-            _cam.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
-        }
-        else
-        {
-            transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+            if (_cam != null)
+            {
+                _cam.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+            }
+            else
+            {
+                transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+            }
         }
     }
 

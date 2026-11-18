@@ -449,7 +449,16 @@ public class TrainingHUD : MonoBehaviour
 
     // ─── Public API for external callers ────────────────────────────────────
 
-    /// <summary>Called by VRControllerManager when right trigger is pressed on a modal screen.</summary>
+    /// <summary>True when a modal dialog is currently presented that requires trainee confirmation.</summary>
+    public bool IsInModalState =>
+        currentState == TrainingState.WelcomeScreen ||
+        currentState == TrainingState.SelectEnvironment ||
+        currentState == TrainingState.KitchenBriefing ||
+        currentState == TrainingState.FireIgnition ||
+        currentState == TrainingState.Obj04_PASSProcedure ||
+        currentState == TrainingState.MissionComplete;
+
+    /// <summary>Called by VRControllerManager when trigger / A button is pressed on a modal screen.</summary>
     public void OnVRTriggerPressed()
     {
         // Advance modal state only on screens that await a proceed action
@@ -469,6 +478,11 @@ public class TrainingHUD : MonoBehaviour
                 break;
             case TrainingState.Obj04_PASSProcedure:
                 AdvanceTo(TrainingState.Obj05_Extinguishing);
+                break;
+            case TrainingState.MissionComplete:
+                VRCameraAnchor.SetRoom01Anchor();
+                currentRoomId = "ROOM 01";
+                AdvanceTo(TrainingState.WelcomeScreen);
                 break;
         }
     }

@@ -107,6 +107,11 @@ public static class FireSafetyMasterBootstrap
         cam.stereoTargetEye = StereoTargetEyeMask.Both;
 #endif
 
+        if (cam.GetComponent<AudioListener>() == null)
+            cam.gameObject.AddComponent<AudioListener>();
+        AudioListener.volume = 1.0f;
+        AudioListener.pause  = false;
+
         // ── Build VR_Player_Rig hierarchy ──
         // Starts in Room 01 (Orientation Studio) at (0,0,0) facing table (+Z)
         GameObject rigGO = GameObject.Find("VR_Player_Rig");

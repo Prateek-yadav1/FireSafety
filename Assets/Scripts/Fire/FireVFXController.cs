@@ -83,31 +83,59 @@ namespace FireSafety.Fire
             // Auto-configure fire audio source for realistic 3D fire sound
             audioSource.loop = true;
             audioSource.playOnAwake = false;
-            audioSource.spatialBlend = 0.75f;      // Mostly 3D so direction matters
-            audioSource.minDistance = 0.5f;
-            audioSource.maxDistance = 12f;
+            audioSource.spatialBlend = 0.50f;      // Balanced spatial blend for strong room presence & spatial direction
+            audioSource.minDistance = 1.0f;
+            audioSource.maxDistance = 25f;
             audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
-            audioSource.pitch = UnityEngine.Random.Range(0.90f, 1.10f); // Slight pitch variation
+            audioSource.volume = 1.0f;
+            audioSource.pitch = UnityEngine.Random.Range(0.95f, 1.05f);
 
-            // Auto-load fire crackling clip if not assigned
+            // Auto-load fire crackling clip
             if (audioSource.clip == null)
             {
-                AudioClip fireClip = null;
+                audioSource.clip = LoadOrGenerateFireClip();
+            }
+
+            flickerNoiseOffset = UnityEngine.Random.Range(0f, 1000f);
+        }
+
+        private static AudioClip LoadOrGenerateFireClip()
+        {
+            AudioClip clip = Resources.Load<AudioClip>("Audio/Fire_Crackling");
+            if (clip == null) clip = Resources.Load<AudioClip>("Fire_Crackling");
+            if (clip == null)
+            {
                 var allClips = Resources.FindObjectsOfTypeAll<AudioClip>();
                 foreach (var c in allClips)
                 {
                     string n = c.name.ToLower();
                     if (n.Contains("fire") || n.Contains("crackle") || n.Contains("crackling") || n.Contains("flame"))
                     {
-                        fireClip = c;
+                        clip = c;
                         break;
                     }
                 }
-                if (fireClip != null)
-                    audioSource.clip = fireClip;
             }
-
-            flickerNoiseOffset = UnityEngine.Random.Range(0f, 1000f);
+            if (clip == null)
+            {
+                // Procedural fire crackling loop
+                int sampleRate = 44100;
+                int samples = sampleRate * 3;
+                float[] data = new float[samples];
+                float roarPhase = 0f;
+                for (int i = 0; i < samples; i++)
+                {
+                    float t = (float)i / sampleRate;
+                    roarPhase += (80f + Mathf.PerlinNoise(t * 4f, 0f) * 60f) / sampleRate;
+                    float roar = Mathf.Sin(2f * Mathf.PI * roarPhase) * 0.45f;
+                    float noise = (Random.value * 2f - 1f) * 0.35f;
+                    float crackle = (Random.value < 0.004f) ? (Random.value * 2f - 1f) * 0.9f : 0f;
+                    data[i] = Mathf.Clamp(roar + noise + crackle, -1f, 1f);
+                }
+                clip = AudioClip.Create("Procedural_Fire_Crackling", samples, 1, sampleRate, false);
+                clip.SetData(data, 0);
+            }
+            return clip;
         }
 
         private void Start()
@@ -171,6 +199,7 @@ namespace FireSafety.Fire
 
             if (audioSource != null)
             {
+                if (audioSource.clip == null) audioSource.clip = LoadOrGenerateFireClip();
                 audioSource.volume = 1.0f;
                 if (!audioSource.isPlaying)
                 {

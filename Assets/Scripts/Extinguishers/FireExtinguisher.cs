@@ -122,9 +122,6 @@ namespace FireSafety.Extinguishers
         /// </summary>
         private void AutoLoadExtinguisherSounds()
         {
-            var allClips = Resources.FindObjectsOfTypeAll<AudioClip>();
-
-            // Determine which discharge clip name to look for based on extinguisher type
             string dischargeKeyword = extinguisherType switch
             {
                 ExtinguisherType.CO2        => "Gas",
@@ -134,17 +131,66 @@ namespace FireSafety.Extinguishers
                 _                           => "Gas"
             };
 
-            foreach (var clip in allClips)
+            // 1. Try loading from Resources/Audio/
+            if (dischargeSound == null)
             {
-                string n = clip.name;
-                if (dischargeSound == null && n.Contains("Extinguisher_Discharge") && n.Contains(dischargeKeyword))
-                    dischargeSound = clip;
-                if (dischargeSound == null && n.Contains("Extinguisher_Discharge"))
-                    dischargeSound = clip; // fallback any discharge
-                if (pinPullSound == null && n.Contains("Pin_Pull"))
-                    pinPullSound = clip;
-                if (dischargeSound != null && pinPullSound != null)
-                    break;
+                dischargeSound = Resources.Load<AudioClip>($"Audio/Extinguisher_Discharge_{dischargeKeyword}");
+                if (dischargeSound == null) dischargeSound = Resources.Load<AudioClip>("Audio/Extinguisher_Discharge_Gas");
+                if (dischargeSound == null) dischargeSound = Resources.Load<AudioClip>($"Extinguisher_Discharge_{dischargeKeyword}");
+            }
+
+            if (pinPullSound == null)
+            {
+                pinPullSound = Resources.Load<AudioClip>("Audio/Extinguisher_Pin_Pull");
+                if (pinPullSound == null) pinPullSound = Resources.Load<AudioClip>("Extinguisher_Pin_Pull");
+            }
+
+            // 2. Fallback to loaded clips
+            if (dischargeSound == null || pinPullSound == null)
+            {
+                var allClips = Resources.FindObjectsOfTypeAll<AudioClip>();
+                foreach (var clip in allClips)
+                {
+                    string n = clip.name;
+                    if (dischargeSound == null && n.Contains("Extinguisher_Discharge") && n.Contains(dischargeKeyword))
+                        dischargeSound = clip;
+                    if (dischargeSound == null && n.Contains("Extinguisher_Discharge"))
+                        dischargeSound = clip;
+                    if (pinPullSound == null && n.Contains("Pin_Pull"))
+                        pinPullSound = clip;
+                }
+            }
+
+            // 3. Guaranteed synthetic fallback for pin pull (metal clink)
+            if (pinPullSound == null)
+            {
+                int sampleRate = 44100;
+                int samples = (int)(sampleRate * 0.18f);
+                float[] data = new float[samples];
+                for (int i = 0; i < samples; i++)
+                {
+                    float t = (float)i / sampleRate;
+                    float ring1 = Mathf.Sin(2f * Mathf.PI * 3200f * t) * Mathf.Exp(-t * 45f);
+                    float ring2 = Mathf.Sin(2f * Mathf.PI * 4800f * t) * Mathf.Exp(-t * 60f);
+                    data[i] = Mathf.Clamp((ring1 * 0.6f + ring2 * 0.4f), -1f, 1f);
+                }
+                pinPullSound = AudioClip.Create("Pin_Pull_Synthetic", samples, 1, sampleRate, false);
+                pinPullSound.SetData(data, 0);
+            }
+
+            // 4. Guaranteed synthetic fallback for discharge spray (pressurized gas hiss)
+            if (dischargeSound == null)
+            {
+                int sampleRate = 44100;
+                int samples = sampleRate * 2;
+                float[] data = new float[samples];
+                for (int i = 0; i < samples; i++)
+                {
+                    float noise = (Random.value * 2f - 1f) * 0.65f;
+                    data[i] = noise;
+                }
+                dischargeSound = AudioClip.Create("Discharge_Synthetic", samples, 1, sampleRate, false);
+                dischargeSound.SetData(data, 0);
             }
         }
 

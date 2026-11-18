@@ -9,17 +9,15 @@ namespace FireSafety.Interactions
 {
     /// <summary>
     /// VRControllerManager — handles Meta Quest 6-DoF tracking, controller input,
-    /// laser pointer, extinguisher pickup, and snap-turning.
+    /// laser pointer, natural hand proximity touch & grab, and snap-turning.
     ///
-    /// When no HMD is detected (desktop editor play), this component is a no-op
-    /// so the KitchenPlayerController handles everything.
-    ///
-    /// VR position anchoring is handled by VRCameraAnchor via Application.onBeforeRender.
+    /// Hands are parented to the XR Rig Root so their local coordinates correspond
+    /// directly to the physical room in both Room 01 (Orientation Studio) and Room 02 (Kitchen).
     /// </summary>
     public class VRControllerManager : MonoBehaviour
     {
         [Header("Locomotion")]
-        [SerializeField] private float vrMoveSpeed   = 2.4f;
+        [SerializeField] private float vrMoveSpeed   = 2.6f;
         [SerializeField] private float snapTurnAngle = 45f;
         [SerializeField] private float turnCooldown  = 0.30f;
 
@@ -32,11 +30,17 @@ namespace FireSafety.Interactions
         [SerializeField] private Vector3 holdOffset   = new Vector3(0.02f, -0.22f, 0.10f);
         [SerializeField] private Vector3 holdRotation = new Vector3(15f, 0f, 0f);
 
+        // Room 01 bounds
+        private const float Room01MinX = -3.2f;
+        private const float Room01MaxX =  3.2f;
+        private const float Room01MinZ = -1.2f;
+        private const float Room01MaxZ =  4.8f;
+
         // Kitchen bounds
-        private const float MinX = 199.5f;
-        private const float MaxX = 205.2f;
-        private const float MinZ = -3.4f;
-        private const float MaxZ =  3.4f;
+        private const float KitchenMinX = 199.5f;
+        private const float KitchenMaxX = 205.2f;
+        private const float KitchenMinZ = -3.4f;
+        private const float KitchenMaxZ =  3.4f;
 
         // XR devices
         private InputDevice _left, _right, _hmd;
@@ -50,10 +54,16 @@ namespace FireSafety.Interactions
         // Interaction state
         private FireExtinguisher _heldExt = null;
         private float _lastTurn  = 0f;
-        private bool  _wasTrig   = false;
+        private bool  _wasTrigRight = false;
+        private bool  _wasTrigLeft  = false;
+        private bool  _wasPrimaryRight = false;
+        private bool  _wasPrimaryLeft  = false;
         private bool  _wasPin    = false;
         private bool  _wasDrop   = false;
         private bool  _discharging = false;
+
+        private float _lastAlarmInteractTime = 0f;
+        private float _lastPowerInteractTime = 0f;
 
         public bool IsVRActive => _hmdOk || XRSettings.isDeviceActive;
 
@@ -69,19 +79,26 @@ namespace FireSafety.Interactions
             }
             else
             {
-                Debug.Log("[VRControllerManager] No HMD detected — desktop mode, all VR input skipped.");
+                Debug.Log("[VRControllerManager] No HMD detected — desktop mode active.");
             }
         }
 
         private void Update()
         {
             TryFindDevices();
-            if (!IsVRActive) return;    // let KitchenPlayerController handle everything
+            if (!IsVRActive) return;
+
+            // Ensure hands are built once VR becomes active
+            if (_leftHand == null || _rightHand == null)
+            {
+                BuildHandRigs();
+            }
 
             HandleVRLocomotion();
             UpdateHandPoses();
             UpdateLaser();
-            HandleVRInteraction();
+            HandleModalAndLaserInteraction();
+            HandleDirectHandProximity();
             HandleExtinguisherControl();
         }
 
@@ -115,10 +132,10 @@ namespace FireSafety.Interactions
 
         private void HandleVRLocomotion()
         {
-            // VR position is primarily managed by VRCameraAnchor.
-            // For fine locomotion within the kitchen, we move the rig root.
             Transform xrRoot = GetXRRoot();
             if (xrRoot == null) return;
+
+            bool inKitchen = xrRoot.position.x > 100f;
 
             // ── Walk with left thumbstick ──
             Vector2 leftStick = Vector2.zero;
@@ -134,8 +151,18 @@ namespace FireSafety.Interactions
 
                 Vector3 move = (fwd * leftStick.y + right * leftStick.x) * vrMoveSpeed * Time.deltaTime;
                 Vector3 np   = xrRoot.position + move;
-                np.x = Mathf.Clamp(np.x, MinX, MaxX);
-                np.z = Mathf.Clamp(np.z, MinZ, MaxZ);
+
+                if (inKitchen)
+                {
+                    np.x = Mathf.Clamp(np.x, KitchenMinX, KitchenMaxX);
+                    np.z = Mathf.Clamp(np.z, KitchenMinZ, KitchenMaxZ);
+                }
+                else
+                {
+                    np.x = Mathf.Clamp(np.x, Room01MinX, Room01MaxX);
+                    np.z = Mathf.Clamp(np.z, Room01MinZ, Room01MaxZ);
+                }
+
                 xrRoot.position = np;
             }
 
@@ -148,7 +175,7 @@ namespace FireSafety.Interactions
                 float angle = Mathf.Sign(rightStick.x) * snapTurnAngle;
                 xrRoot.Rotate(0f, angle, 0f, Space.World);
                 _lastTurn = Time.time;
-                Haptic(_right, 0.3f, 0.1f);
+                Haptic(_right, 0.35f, 0.1f);
             }
         }
 
@@ -156,8 +183,8 @@ namespace FireSafety.Interactions
 
         private Transform GetXRRoot()
         {
-            // VRCameraAnchor found the root — reuse its logic
             Camera cam = Camera.main;
+            if (cam == null) cam = GetComponent<Camera>();
             if (cam == null) return null;
 
             Transform t = cam.transform;
@@ -169,53 +196,61 @@ namespace FireSafety.Interactions
 
         private void BuildHandRigs()
         {
-            _leftHand  = BuildGlove("VR_LeftHand",  true);
-            _rightHand = BuildGlove("VR_RightHand", false);
+            Transform xrRoot = GetXRRoot();
 
-            // Right hand: laser pointer
-            _rightLaser = _rightHand.AddComponent<LineRenderer>();
-            _rightLaser.material     = new Material(Shader.Find("Sprites/Default"));
-            _rightLaser.startWidth   = 0.004f;
-            _rightLaser.endWidth     = 0.001f;
-            _rightLaser.positionCount = 2;
-            _rightLaser.startColor   = laserNormal;
-            _rightLaser.endColor     = new Color(laserNormal.r, laserNormal.g, laserNormal.b, 0f);
-            _rightLaser.useWorldSpace = true;
+            if (_leftHand == null)
+                _leftHand = BuildGlove("VR_LeftHand", true, xrRoot);
 
-            // Laser dot
-            _rightDot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _rightDot.name = "LaserDot";
-            Destroy(_rightDot.GetComponent<Collider>());
-            _rightDot.transform.localScale = Vector3.one * 0.025f;
-            var dotMat = _rightDot.GetComponent<Renderer>().material;
-            dotMat.color = laserHover;
-            dotMat.EnableKeyword("_EMISSION");
-            dotMat.SetColor("_EmissionColor", laserHover * 2f);
+            if (_rightHand == null)
+            {
+                _rightHand = BuildGlove("VR_RightHand", false, xrRoot);
+
+                // Right hand: laser pointer
+                _rightLaser = _rightHand.AddComponent<LineRenderer>();
+                _rightLaser.material      = new Material(Shader.Find("Sprites/Default"));
+                _rightLaser.startWidth    = 0.005f;
+                _rightLaser.endWidth      = 0.001f;
+                _rightLaser.positionCount = 2;
+                _rightLaser.startColor    = laserNormal;
+                _rightLaser.endColor      = new Color(laserNormal.r, laserNormal.g, laserNormal.b, 0f);
+                _rightLaser.useWorldSpace = true;
+
+                // Laser dot
+                _rightDot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                _rightDot.name = "LaserDot";
+                Destroy(_rightDot.GetComponent<Collider>());
+                _rightDot.transform.localScale = Vector3.one * 0.03f;
+                var dotMat = _rightDot.GetComponent<Renderer>().material;
+                dotMat.color = laserHover;
+                dotMat.EnableKeyword("_EMISSION");
+                dotMat.SetColor("_EmissionColor", laserHover * 2f);
+            }
         }
 
-        private GameObject BuildGlove(string name, bool isLeft)
+        private GameObject BuildGlove(string name, bool isLeft, Transform parent)
         {
             var go = new GameObject(name);
+            if (parent != null) go.transform.SetParent(parent, false);
 
             // Palm cube
             var palm = GameObject.CreatePrimitive(PrimitiveType.Cube);
             palm.name = "Palm";
             palm.transform.SetParent(go.transform, false);
-            palm.transform.localScale = new Vector3(0.08f, 0.025f, 0.10f);
+            palm.transform.localScale = new Vector3(0.085f, 0.035f, 0.11f);
             Destroy(palm.GetComponent<Collider>());
 
             // Finger cylinder
             var finger = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             finger.name = "Finger";
             finger.transform.SetParent(go.transform, false);
-            finger.transform.localPosition = new Vector3(isLeft ? -0.015f : 0.015f, 0f, 0.05f);
-            finger.transform.localScale    = new Vector3(0.012f, 0.03f, 0.012f);
+            finger.transform.localPosition = new Vector3(isLeft ? -0.015f : 0.015f, 0f, 0.06f);
+            finger.transform.localScale    = new Vector3(0.014f, 0.035f, 0.014f);
             finger.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             Destroy(finger.GetComponent<Collider>());
 
-            // Dark grey glove material
-            var mat = new Material(Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit"));
-            mat.color = new Color(0.12f, 0.12f, 0.14f);
+            // Glove material (URP Lit / Standard)
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            mat.color = isLeft ? new Color(0.18f, 0.22f, 0.28f) : new Color(0.15f, 0.17f, 0.20f);
             foreach (var r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = mat;
 
             return go;
@@ -223,32 +258,38 @@ namespace FireSafety.Interactions
 
         private void UpdateHandPoses()
         {
+            Transform xrRoot = GetXRRoot();
+
+            // Keep hands parented to xrRoot
+            if (_leftHand != null && xrRoot != null && _leftHand.transform.parent != xrRoot)
+                _leftHand.transform.SetParent(xrRoot, false);
+            if (_rightHand != null && xrRoot != null && _rightHand.transform.parent != xrRoot)
+                _rightHand.transform.SetParent(xrRoot, false);
+
             if (_leftHand != null && _left.isValid)
             {
-                Vector3 lPos; Quaternion lRot;
-                if (_left.TryGetFeatureValue(CommonUsages.devicePosition, out lPos) &&
-                    _left.TryGetFeatureValue(CommonUsages.deviceRotation, out lRot))
+                if (_left.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 lPos) &&
+                    _left.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion lRot))
                 {
-                    _leftHand.transform.position = lPos;
-                    _leftHand.transform.rotation = lRot;
+                    _leftHand.transform.localPosition = lPos;
+                    _leftHand.transform.localRotation = lRot;
                 }
             }
 
             if (_rightHand != null && _right.isValid)
             {
-                Vector3 rPos; Quaternion rRot;
-                if (_right.TryGetFeatureValue(CommonUsages.devicePosition, out rPos) &&
-                    _right.TryGetFeatureValue(CommonUsages.deviceRotation, out rRot))
+                if (_right.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 rPos) &&
+                    _right.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rRot))
                 {
+                    _rightHand.transform.localPosition = rPos;
+                    _rightHand.transform.localRotation = rRot;
+
                     if (_heldExt != null)
                     {
-                        // Offset for natural hold position
-                        Vector3 offset = _rightHand.transform.TransformDirection(holdOffset);
-                        _heldExt.transform.position = rPos + offset;
-                        _heldExt.transform.rotation = rRot * Quaternion.Euler(holdRotation);
+                        // Transform hold offset from right hand
+                        _heldExt.transform.position = _rightHand.transform.TransformPoint(holdOffset);
+                        _heldExt.transform.rotation = _rightHand.transform.rotation * Quaternion.Euler(holdRotation);
                     }
-                    _rightHand.transform.position = rPos;
-                    _rightHand.transform.rotation = rRot;
                 }
             }
         }
@@ -284,37 +325,143 @@ namespace FireSafety.Interactions
             _rightLaser.SetPosition(1, endPos);
         }
 
-        // ─── Trigger Interaction ───────────────────────────────────────────────
+        // ─── Modal HUD & Laser Distance Interaction ────────────────────────────
 
-        private void HandleVRInteraction()
+        private void HandleModalAndLaserInteraction()
         {
-            if (_rightHand == null) return;
+            // Read controller buttons
+            float trigRightVal = 0f; if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.trigger, out trigRightVal);
+            float trigLeftVal  = 0f; if (_left.isValid)  _left.TryGetFeatureValue(CommonUsages.trigger, out trigLeftVal);
 
-            float trig = 0f;
-            if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.trigger, out trig);
-            bool trigDown = (trig > 0.5f) && !_wasTrig;
-            _wasTrig = trig > 0.5f;
+            bool trigRightDown = (trigRightVal > 0.5f) && !_wasTrigRight;
+            bool trigLeftDown  = (trigLeftVal  > 0.5f) && !_wasTrigLeft;
+            _wasTrigRight = trigRightVal > 0.5f;
+            _wasTrigLeft  = trigLeftVal  > 0.5f;
 
-            if (!trigDown) return;
+            bool primaryRight = false; if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.primaryButton, out primaryRight);
+            bool primaryLeft  = false; if (_left.isValid)  _left.TryGetFeatureValue(CommonUsages.primaryButton, out primaryLeft);
+            bool primaryRightDown = primaryRight && !_wasPrimaryRight;
+            bool primaryLeftDown  = primaryLeft  && !_wasPrimaryLeft;
+            _wasPrimaryRight = primaryRight;
+            _wasPrimaryLeft  = primaryLeft;
 
-            Ray ray = new Ray(_rightHand.transform.position, _rightHand.transform.forward);
-            if (!Physics.Raycast(ray, out RaycastHit hit, maxLaserDist)) return;
+            bool anyActionDown = trigRightDown || trigLeftDown || primaryRightDown || primaryLeftDown;
 
-            // 1. Extinguisher pickup
-            var ext = hit.collider.GetComponentInParent<FireExtinguisher>();
-            if (ext != null && !ext.IsHeld) { EquipExtinguisher(ext); Haptic(_right, 0.7f, 0.15f); return; }
-
-            // 2. Fire alarm
-            var alarm = hit.collider.GetComponentInParent<FireAlarmController>();
-            if (alarm != null) { alarm.ToggleAlarm(); Haptic(_right, 0.85f, 0.2f); return; }
-
-            // 3. Power switch
-            var psw = hit.collider.GetComponentInParent<PowerSwitchController>();
-            if (psw != null) { psw.TogglePower(); Haptic(_right, 0.85f, 0.2f); return; }
-
-            // 4. Advance HUD modal via VR trigger
+            // 1. Advance HUD Modal (if a modal is currently up)
             var hud = FindObjectOfType<TrainingHUD>();
-            if (hud != null) hud.OnVRTriggerPressed();
+            if (hud != null && hud.IsInModalState)
+            {
+                if (anyActionDown)
+                {
+                    hud.OnVRTriggerPressed();
+                    Haptic(_right, 0.6f, 0.12f);
+                    Haptic(_left, 0.6f, 0.12f);
+                    return;
+                }
+            }
+
+            // 2. Laser distance raycast interaction (triggered via right trigger)
+            if (trigRightDown && _rightHand != null)
+            {
+                Ray ray = new Ray(_rightHand.transform.position, _rightHand.transform.forward);
+                if (Physics.Raycast(ray, out RaycastHit hit, maxLaserDist))
+                {
+                    var ext = hit.collider.GetComponentInParent<FireExtinguisher>();
+                    if (ext != null && !ext.IsHeld && _heldExt == null)
+                    {
+                        EquipExtinguisher(ext);
+                        Haptic(_right, 0.7f, 0.15f);
+                        return;
+                    }
+
+                    var alarm = hit.collider.GetComponentInParent<FireAlarmController>();
+                    if (alarm != null)
+                    {
+                        alarm.ToggleAlarm();
+                        Haptic(_right, 0.85f, 0.2f);
+                        return;
+                    }
+
+                    var psw = hit.collider.GetComponentInParent<PowerSwitchController>();
+                    if (psw != null)
+                    {
+                        psw.TogglePower();
+                        Haptic(_right, 0.85f, 0.2f);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ─── Direct Hand Proximity Touch & Grab ────────────────────────────────
+
+        private void HandleDirectHandProximity()
+        {
+            if (_rightHand != null) CheckHandProximity(_rightHand.transform, _right, false);
+            if (_leftHand != null)  CheckHandProximity(_leftHand.transform,  _left,  true);
+        }
+
+        private void CheckHandProximity(Transform handTransform, InputDevice device, bool isLeft)
+        {
+            // Read hand grip and trigger inputs
+            float grip = 0f;
+            if (device.isValid) device.TryGetFeatureValue(CommonUsages.grip, out grip);
+            float trig = 0f;
+            if (device.isValid) device.TryGetFeatureValue(CommonUsages.trigger, out trig);
+
+            bool handAction = (grip > 0.4f) || (trig > 0.4f);
+
+            // Proximity sphere query (radius 0.35m around the hand)
+            Collider[] hits = Physics.OverlapSphere(handTransform.position, 0.35f);
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider col = hits[i];
+                if (col == null) continue;
+
+                // ── A. Fire Alarm ──
+                var alarm = col.GetComponentInParent<FireAlarmController>();
+                if (alarm != null && Time.time - _lastAlarmInteractTime > 0.8f)
+                {
+                    float dist = Vector3.Distance(handTransform.position, col.ClosestPoint(handTransform.position));
+                    if (dist < 0.15f || (dist < 0.35f && handAction))
+                    {
+                        alarm.ToggleAlarm();
+                        _lastAlarmInteractTime = Time.time;
+                        Haptic(device, 0.9f, 0.22f);
+                        Debug.Log($"[VRControllerManager] {(isLeft ? "Left" : "Right")} hand activated Fire Alarm!");
+                        return;
+                    }
+                }
+
+                // ── B. Main Power / Light Switch ──
+                var psw = col.GetComponentInParent<PowerSwitchController>();
+                if (psw != null && Time.time - _lastPowerInteractTime > 0.8f)
+                {
+                    float dist = Vector3.Distance(handTransform.position, col.ClosestPoint(handTransform.position));
+                    if (dist < 0.15f || (dist < 0.35f && handAction))
+                    {
+                        psw.TogglePower();
+                        _lastPowerInteractTime = Time.time;
+                        Haptic(device, 0.9f, 0.22f);
+                        Debug.Log($"[VRControllerManager] {(isLeft ? "Left" : "Right")} hand toggled Power Switch!");
+                        return;
+                    }
+                }
+
+                // ── C. Fire Extinguisher Direct Grab ──
+                if (_heldExt == null && handAction)
+                {
+                    var ext = col.GetComponentInParent<FireExtinguisher>();
+                    if (ext != null && !ext.IsHeld)
+                    {
+                        EquipExtinguisher(ext);
+                        Haptic(device, 0.75f, 0.18f);
+                        Debug.Log($"[VRControllerManager] Direct hand grab equipped {ext.DisplayName}!");
+                        return;
+                    }
+                }
+            }
         }
 
         // ─── Extinguisher Control ──────────────────────────────────────────────
@@ -334,13 +481,34 @@ namespace FireSafety.Interactions
         {
             if (_heldExt == null) return;
 
-            // Pull pin — [A] button (primaryButton)
+            // 1. Pull Pin:
+            // Either by pressing Primary button ([A] on right or [X] on left),
+            // OR by reaching free left hand near the extinguisher and squeezing trigger/grip!
             bool pinBtn = false;
             if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.primaryButton, out pinBtn);
-            if (pinBtn && !_wasPin) { _heldExt.PullSafetyPin(); Haptic(_right, 0.6f, 0.12f); }
-            _wasPin = pinBtn;
+            if (!pinBtn && _left.isValid) _left.TryGetFeatureValue(CommonUsages.primaryButton, out pinBtn);
 
-            // Squeeze — right trigger
+            bool leftHandNearPin = false;
+            if (_leftHand != null)
+            {
+                float distToExt = Vector3.Distance(_leftHand.transform.position, _heldExt.transform.position);
+                if (distToExt < 0.30f)
+                {
+                    float lTrig = 0f; if (_left.isValid) _left.TryGetFeatureValue(CommonUsages.trigger, out lTrig);
+                    float lGrip = 0f; if (_left.isValid) _left.TryGetFeatureValue(CommonUsages.grip, out lGrip);
+                    if (lTrig > 0.4f || lGrip > 0.4f) leftHandNearPin = true;
+                }
+            }
+
+            if ((pinBtn || leftHandNearPin) && !_wasPin)
+            {
+                _heldExt.PullSafetyPin();
+                Haptic(_right, 0.65f, 0.15f);
+                Haptic(_left, 0.65f, 0.15f);
+            }
+            _wasPin = pinBtn || leftHandNearPin;
+
+            // 2. Squeeze Handle & Spray: right trigger
             float trig = 0f;
             if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.trigger, out trig);
             if (Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0)) trig = 1f; // desktop fallback
@@ -348,7 +516,7 @@ namespace FireSafety.Interactions
             if (trig > 0.2f)
             {
                 if (!_discharging) { _heldExt.SqueezeHandle(); _discharging = true; }
-                Haptic(_right, Mathf.Lerp(0.25f, 0.65f, trig), 0.08f);
+                Haptic(_right, Mathf.Lerp(0.3f, 0.8f, trig), 0.08f);
             }
             else if (_discharging)
             {
@@ -356,9 +524,11 @@ namespace FireSafety.Interactions
                 _discharging = false;
             }
 
-            // Drop — [B] button (secondaryButton)
+            // 3. Drop Extinguisher: secondary button ([B] on right / [Y] on left)
             bool dropBtn = false;
             if (_right.isValid) _right.TryGetFeatureValue(CommonUsages.secondaryButton, out dropBtn);
+            if (!dropBtn && _left.isValid) _left.TryGetFeatureValue(CommonUsages.secondaryButton, out dropBtn);
+
             if (dropBtn && !_wasDrop)
             {
                 if (_discharging) { _heldExt.ReleaseHandle(); _discharging = false; }

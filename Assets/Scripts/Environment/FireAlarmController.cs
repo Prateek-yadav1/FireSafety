@@ -403,7 +403,7 @@ public class FireAlarmController : MonoBehaviour
             boxCol = gameObject.AddComponent<BoxCollider>();
 
         boxCol.size =
-            new Vector3(0.27f, 0.36f, 0.15f);
+            new Vector3(0.35f, 0.45f, 0.25f);
 
         boxCol.center =
             new Vector3(0f, 0.015f, 0f);
@@ -620,25 +620,47 @@ public class FireAlarmController : MonoBehaviour
 
         if (alarmClip == null)
         {
-            AudioClip[] allClips =
-                Resources.FindObjectsOfTypeAll<AudioClip>();
-
-            foreach (AudioClip clip in allClips)
-            {
-                if (
-                    clip.name.Contains("Alarm_Siren") ||
-                    clip.name.Contains("alarm") ||
-                    clip.name.Contains("siren")
-                )
-                {
-                    alarmClip = clip;
-                    break;
-                }
-            }
+            alarmClip = LoadOrGenerateAlarmClip();
         }
 
         if (alarmClip != null)
             audioSource.clip = alarmClip;
+    }
+
+    private static AudioClip LoadOrGenerateAlarmClip()
+    {
+        AudioClip clip = Resources.Load<AudioClip>("Audio/Alarm_Siren");
+        if (clip == null) clip = Resources.Load<AudioClip>("Alarm_Siren");
+        if (clip == null)
+        {
+            AudioClip[] allClips = Resources.FindObjectsOfTypeAll<AudioClip>();
+            foreach (AudioClip c in allClips)
+            {
+                if (c.name.Contains("Alarm_Siren") || c.name.Contains("alarm") || c.name.Contains("siren"))
+                {
+                    clip = c;
+                    break;
+                }
+            }
+        }
+        if (clip == null)
+        {
+            // Procedural alternating high/low emergency fire siren (900 Hz / 700 Hz)
+            int sampleRate = 44100;
+            int samples = sampleRate * 2; // 2 second loop
+            float[] data = new float[samples];
+            float phase = 0f;
+            for (int i = 0; i < samples; i++)
+            {
+                float t = (float)i / sampleRate;
+                float freq = (t % 0.8f < 0.4f) ? 880f : 660f;
+                phase += freq / sampleRate;
+                data[i] = Mathf.Sin(2f * Mathf.PI * phase) * 0.85f;
+            }
+            clip = AudioClip.Create("Procedural_Alarm_Siren", samples, 1, sampleRate, false);
+            clip.SetData(data, 0);
+        }
+        return clip;
     }
 
     // =========================================================
