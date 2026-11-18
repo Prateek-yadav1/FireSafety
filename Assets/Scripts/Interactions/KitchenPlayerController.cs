@@ -289,7 +289,6 @@ public class KitchenPlayerController : MonoBehaviour
                     {
                         activeHeldExtinguisher.Drop();
                     }
-                    Transform origin = cameraTransform != null ? cameraTransform : transform;
                     extinguisher.Pickup(origin);
                     activeHeldExtinguisher = extinguisher;
                     Debug.Log($"[KitchenPlayerController] Picked up: {extinguisher.Type}");
