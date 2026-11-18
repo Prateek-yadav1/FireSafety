@@ -5,17 +5,14 @@ using FireSafety.Training;
 
 /// <summary>
 /// KitchenPlayerController — Rock-solid Desktop (WASD + 360° mouse look) controller.
+/// Supports both Room 01 (Orientation Studio at 0,0,0) and Room 02 (Kitchen at 202.8,0,0).
 ///
 /// Architecture:
-///   VR_Player_Rig (at kitchen floor level, holds yaw rotation)
-///     └── Main Camera  (local Y=1.6m eye height, holds pitch rotation)
+///   VR_Player_Rig (at floor level, holds yaw rotation)
+///     └── Main Camera  (local Y=1.55m-1.6m eye height, holds pitch rotation)
 ///
-/// Movement: WASD moves the VR_Player_Rig in XZ plane.
+/// Movement: WASD moves the VR_Player_Rig in XZ plane within current room bounds.
 /// Look:     Mouse X rotates the rig (yaw). Mouse Y tilts the camera (pitch).
-/// Bounds:   Player cannot walk through kitchen walls.
-///
-/// When VR (Meta Quest) is active, this script skips all input handling —
-/// VRControllerManager + VRCameraAnchor handle VR locomotion and position.
 /// </summary>
 public class KitchenPlayerController : MonoBehaviour
 {
@@ -32,21 +29,28 @@ public class KitchenPlayerController : MonoBehaviour
     [Header("Interaction")]
     [SerializeField] private float interactionDistance = 4.5f;
 
-    // Kitchen walkable area (world space)
+    // Room 01: Orientation Studio bounds
+    public const float Room01MinX = -3.2f;
+    public const float Room01MaxX =  3.2f;
+    public const float Room01MinZ = -1.2f;
+    public const float Room01MaxZ =  4.8f;
+
+    // Room 02: Kitchen walkable area (world space)
     public const float KitchenMinX = 199.5f;
     public const float KitchenMaxX = 205.2f;
     public const float KitchenMinZ = -3.4f;
     public const float KitchenMaxZ =  3.4f;
-    public const float EyeHeight   = 1.60f;
-    public const float KitchenRigX = 202.8f;
+    public const float EyeHeight   = 1.55f;
+
+    public bool IsInKitchen => _rig != null && _rig.position.x > 100f;
 
     // References
     private Transform _rig;        // VR_Player_Rig — holds yaw, moves in XZ
     private Transform _cam;        // Main Camera child — holds pitch at eye height
 
     // State
-    private float _yaw   = -90f;   // start facing -X direction (toward stove)
-    private float _pitch =   0f;
+    private float _yaw   = 0f;     // starts at 0° (facing forward toward Room 01 table)
+    private float _pitch = 0f;
     private bool  _cursorLocked = false;
     private bool  _isVR = false;
 
@@ -70,67 +74,41 @@ public class KitchenPlayerController : MonoBehaviour
         {
             LockCursor(true);
         }
-        Debug.Log($"[KitchenPlayerController] Ready. VR={_isVR}. Rig pos={(_rig != null ? _rig.position.ToString() : "null")}");
+        Debug.Log($"[KitchenPlayerController] Ready. VR={_isVR}, InKitchen={IsInKitchen}. Rig pos={(_rig != null ? _rig.position.ToString() : "null")}");
     }
 
     private void CheckVRMode()
     {
-#if !UNITY_EDITOR
         _isVR = UnityEngine.XR.XRSettings.isDeviceActive;
-#else
-        _isVR = UnityEngine.XR.XRSettings.isDeviceActive;
-#endif
     }
 
     private void BuildRigHierarchy()
     {
-        // Find or create VR_Player_Rig
         GameObject rigGO = GameObject.Find("VR_Player_Rig");
         if (rigGO == null)
         {
             rigGO = new GameObject("VR_Player_Rig");
+            rigGO.transform.position = Vector3.zero; // Starts in Room 01
+            rigGO.transform.rotation = Quaternion.identity;
         }
         _rig = rigGO.transform;
 
-        // Always ensure rig is AT kitchen level (not at origin)
-        if (_rig.position.x < 100f)
-        {
-            _rig.position = new Vector3(KitchenRigX, 0f, 0f);
-        }
-
-        // Find Main Camera
         Camera mainCam = Camera.main;
-        if (mainCam == null)
-        {
-            // Check if this GO has a Camera
-            mainCam = GetComponent<Camera>();
-        }
-        if (mainCam == null)
-        {
-            mainCam = FindObjectOfType<Camera>();
-        }
+        if (mainCam == null) mainCam = GetComponent<Camera>();
+        if (mainCam == null) mainCam = FindObjectOfType<Camera>();
 
         if (mainCam != null)
         {
             _cam = mainCam.transform;
 
-            // Parent camera to rig IF not already correctly set
             if (_cam.parent != _rig)
             {
-                // Before re-parenting, preserve world position to avoid jump
-                Vector3 worldPos = _cam.position;
-
                 _cam.SetParent(_rig, false);
-
-                // Camera sits at eye height relative to rig
-                // If the camera was at a reasonable world position, use it
-                float localY = worldPos.y > 0.5f ? Mathf.Clamp(worldPos.y, 1.0f, 2.5f) : EyeHeight;
-                _cam.localPosition = new Vector3(0f, localY, 0f);
+                _cam.localPosition = new Vector3(0f, EyeHeight, IsInKitchen ? 0f : 0.45f);
                 _cam.localRotation = Quaternion.identity;
             }
         }
 
-        // Set initial yaw to match current rig rotation
         _yaw   = _rig.eulerAngles.y;
         _pitch = 0f;
         ApplyRotation();
@@ -140,11 +118,8 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void Update()
     {
-        // Keep VR state updated
         CheckVRMode();
-
-        // VR mode: skip all desktop input (VRControllerManager handles it)
-        if (_isVR) return;
+        if (_isVR) return; // VRControllerManager handles VR locomotion
 
         HandleCursorLock();
         HandleLook();
@@ -159,11 +134,10 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void LateUpdate()
     {
-        // Safety watchdog: if rig drifted away from kitchen, snap back
-        if (_rig != null && _rig.position.x < 100f && !_isVR)
+        // Safety watchdog: prevent falling below floor
+        if (_rig != null && _rig.position.y < -5f)
         {
-            _rig.position = new Vector3(KitchenRigX, 0f, 0f);
-            Debug.LogWarning("[KitchenPlayerController] Watchdog: Rig was at origin — snapped to kitchen.");
+            _rig.position = IsInKitchen ? new Vector3(202.8f, 0f, 0f) : Vector3.zero;
         }
     }
 
@@ -178,13 +152,11 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleCursorLock()
     {
-        // ESC unlocks cursor
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             LockCursor(!_cursorLocked);
             return;
         }
-        // Clicking in game window re-locks
         if (!_cursorLocked && Input.GetMouseButtonDown(0))
         {
             LockCursor(true);
@@ -195,17 +167,15 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleLook()
     {
-        // Mouse look: active when cursor locked OR right mouse held
         if (_cursorLocked || Input.GetMouseButton(1))
         {
             float mx = Input.GetAxis("Mouse X");
             float my = Input.GetAxis("Mouse Y");
 
             _yaw   += mx * mouseSensitivity;
-            _pitch -= my * mouseSensitivity;   // subtract = look up when moving mouse up
+            _pitch -= my * mouseSensitivity;
         }
 
-        // Keyboard turn: Q/E or Left/Right arrows
         float kbTurn = 0f;
         if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow))  kbTurn -= 1f;
         if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) kbTurn += 1f;
@@ -219,12 +189,10 @@ public class KitchenPlayerController : MonoBehaviour
     {
         if (_rig != null)
         {
-            // Rig holds yaw (horizontal rotation)
             _rig.rotation = Quaternion.Euler(0f, _yaw, 0f);
         }
         if (_cam != null)
         {
-            // Camera holds pitch (vertical tilt) as LOCAL rotation
             _cam.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
     }
@@ -237,7 +205,6 @@ public class KitchenPlayerController : MonoBehaviour
 
         float speed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : moveSpeed;
 
-        // Collect movement input — direct KeyCode + Axis for maximum responsiveness
         float fwd  = 0f;
         float side = 0f;
 
@@ -246,27 +213,33 @@ public class KitchenPlayerController : MonoBehaviour
         if (Input.GetKey(KeyCode.A))                                     side = -1f;
         if (Input.GetKey(KeyCode.D))                                     side =  1f;
 
-        // Fallback to axis if direct keys have no input
         if (Mathf.Approximately(fwd, 0f))  fwd  = Input.GetAxisRaw("Vertical");
         if (Mathf.Approximately(side, 0f)) side = Input.GetAxisRaw("Horizontal");
 
         if (Mathf.Abs(fwd) < 0.01f && Mathf.Abs(side) < 0.01f) return;
 
-        // Movement direction is relative to camera's HORIZONTAL heading
         Vector3 camFwd   = _cam != null ? _cam.forward : _rig.forward;
         Vector3 camRight = _cam != null ? _cam.right   : _rig.right;
 
-        // Flatten to horizontal plane
         camFwd.y = 0f;  camFwd.Normalize();
         camRight.y = 0f; camRight.Normalize();
 
         Vector3 move = (camFwd * fwd + camRight * side).normalized * (speed * Time.deltaTime);
-
         Vector3 newPos = _rig.position + move;
-        // Clamp within kitchen walls
-        newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
-        newPos.y = 0f;
-        newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
+
+        // Clamp based on current room
+        if (IsInKitchen)
+        {
+            newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
+            newPos.y = 0f;
+            newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
+        }
+        else
+        {
+            newPos.x = Mathf.Clamp(newPos.x, Room01MinX, Room01MaxX);
+            newPos.y = 0f;
+            newPos.z = Mathf.Clamp(newPos.z, Room01MinZ, Room01MaxZ);
+        }
 
         _rig.position = newPos;
     }
@@ -275,22 +248,20 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void HandleHotkeys()
     {
-        // [1] Water, [2] Dry Powder, [3] CO2
+        // Extinguishers
         if (Input.GetKeyDown(KeyCode.Alpha1)) QuickEquip(ExtinguisherType.Water);
         if (Input.GetKeyDown(KeyCode.Alpha2)) QuickEquip(ExtinguisherType.DryPowder);
         if (Input.GetKeyDown(KeyCode.Alpha3)) QuickEquip(ExtinguisherType.CO2);
 
-        // [A] Fire Alarm (only when not pressing [A] for movement — A is left-strafe)
-        // We use GetKeyDown carefully to avoid conflict: A is for strafing in HandleMovement,
-        // but [A] alarm uses GetKeyDown which only fires once
-        if (Input.GetKeyDown(KeyCode.A) && !Input.GetKey(KeyCode.LeftShift))
+        // [A] Fire Alarm (only when in kitchen)
+        if (IsInKitchen && Input.GetKeyDown(KeyCode.A) && !Input.GetKey(KeyCode.LeftShift))
         {
             var alarm = FindObjectOfType<FireAlarmController>();
             if (alarm != null) alarm.ToggleAlarm();
         }
 
         // [L] Power Switch
-        if (Input.GetKeyDown(KeyCode.L))
+        if (IsInKitchen && Input.GetKeyDown(KeyCode.L))
         {
             var psw = FindObjectOfType<PowerSwitchController>();
             if (psw != null) psw.TogglePower();
@@ -326,7 +297,6 @@ public class KitchenPlayerController : MonoBehaviour
                 return;
             }
         }
-        Debug.LogWarning($"[KitchenPlayerController] No {type} extinguisher found in scene.");
     }
 
     // ─── Extinguisher Spray ───────────────────────────────────────────────────
@@ -335,11 +305,9 @@ public class KitchenPlayerController : MonoBehaviour
     {
         if (_heldExt == null) return;
 
-        // Pull pin [P]
         if (Input.GetKeyDown(KeyCode.P))
             _heldExt.PullSafetyPin();
 
-        // Squeeze handle: Space or Left Mouse Button (when cursor locked)
         bool squeezing = Input.GetKey(KeyCode.Space) ||
                          (_cursorLocked && Input.GetMouseButton(0));
 
@@ -368,7 +336,6 @@ public class KitchenPlayerController : MonoBehaviour
 
         if (!Physics.Raycast(ray, out RaycastHit hit, interactionDistance)) return;
 
-        // Pick up extinguisher
         var ext = hit.collider.GetComponentInParent<FireExtinguisher>();
         if (ext != null && !ext.IsHeld)
         {
@@ -381,27 +348,37 @@ public class KitchenPlayerController : MonoBehaviour
             return;
         }
 
-        // Fire alarm
         var alarm = hit.collider.GetComponentInParent<FireAlarmController>();
         if (alarm != null) { alarm.ToggleAlarm(); return; }
 
-        // Power switch
         var psw = hit.collider.GetComponentInParent<PowerSwitchController>();
         if (psw != null) { psw.TogglePower(); return; }
     }
 
     // ─── Teleport API ─────────────────────────────────────────────────────────
 
-    /// <summary>Teleport the player rig to a world position with optional yaw angle.</summary>
-    public void Teleport(Vector3 position, float yaw = -90f)
+    public void Teleport(Vector3 position, float yaw = 0f)
     {
         if (_rig == null) BuildRigHierarchy();
         if (_rig == null) return;
 
-        Vector3 safe = new Vector3(
-            Mathf.Clamp(position.x, KitchenMinX, KitchenMaxX),
-            0f,
-            Mathf.Clamp(position.z, KitchenMinZ, KitchenMaxZ));
+        Vector3 safe;
+        if (position.x > 100f)
+        {
+            // Kitchen
+            safe = new Vector3(
+                Mathf.Clamp(position.x, KitchenMinX, KitchenMaxX),
+                0f,
+                Mathf.Clamp(position.z, KitchenMinZ, KitchenMaxZ));
+        }
+        else
+        {
+            // Room 01
+            safe = new Vector3(
+                Mathf.Clamp(position.x, Room01MinX, Room01MaxX),
+                0f,
+                Mathf.Clamp(position.z, Room01MinZ, Room01MaxZ));
+        }
 
         _rig.position = safe;
         _yaw   = yaw;

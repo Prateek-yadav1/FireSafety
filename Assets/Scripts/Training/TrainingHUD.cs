@@ -320,6 +320,8 @@ public class TrainingHUD : MonoBehaviour
         screenFadeAlpha = 1.0f;
 
         // 2. Teleport player and camera to Kitchen facing stove & fire
+        VRCameraAnchor.SetKitchenAnchor();
+
         Vector3 kitchenPos = new Vector3(202.80f, 1.60f, 0.0f);
         Vector3 kitchenRot = new Vector3(0f, -90f, 0f);
 
@@ -1093,9 +1095,10 @@ public class TrainingHUD : MonoBehaviour
             if (fireVFX != null) fireVFX.ExtinguishFire();
             currentRoomId = "ROOM 01";
 
-            // Reset position inside kitchen
+            // Reset position to Room 01 (Orientation Studio)
+            VRCameraAnchor.SetRoom01Anchor();
             if (playerController != null)
-                playerController.Teleport(new Vector3(202.80f, 1.60f, 0.0f), new Vector3(0f, -90f, 0f));
+                playerController.Teleport(new Vector3(0f, 1.55f, 0.45f), Vector3.zero);
 
             AdvanceTo(TrainingState.WelcomeScreen);
         }

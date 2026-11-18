@@ -47,6 +47,9 @@ public static class FireSafetyMasterBootstrap
         // ── 2. Directional light ─────────────────────────────────────────────
         EnsureDirectionalLight();
 
+        // ── 2b. Build Room 01 (Orientation Studio matching Figma) ───────────
+        OrientationRoomBuilder.BuildOrientationRoom();
+
         // ── 3. Camera + Controllers ──────────────────────────────────────────
         EnsureCameraAndControllers();
 
@@ -100,31 +103,24 @@ public static class FireSafetyMasterBootstrap
         cam.fieldOfView     = 70f;
 
         // ── Build VR_Player_Rig hierarchy ──
-        // The rig sits at floor level (y=0), camera sits at eye height as child
+        // Starts in Room 01 (Orientation Studio) at (0,0,0) facing table (+Z)
         GameObject rigGO = GameObject.Find("VR_Player_Rig");
         if (rigGO == null)
         {
             rigGO = new GameObject("VR_Player_Rig");
-            rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
-            rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
-        }
-        else
-        {
-            // Ensure rig is at kitchen
-            if (rigGO.transform.position.x < 100f)
-            {
-                rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
-                rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
-            }
+            rigGO.transform.position = Vector3.zero;
+            rigGO.transform.rotation = Quaternion.identity;
         }
 
         // Parent camera to rig
         if (cam.transform.parent != rigGO.transform)
         {
             cam.transform.SetParent(rigGO.transform, false);
-            cam.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+            cam.transform.localPosition = new Vector3(0f, 1.55f, 0.45f);
             cam.transform.localRotation = Quaternion.identity;
         }
+
+        VRCameraAnchor.SetRoom01Anchor();
 
         // ── Add KitchenPlayerController to camera ──
         if (cam.GetComponent<KitchenPlayerController>() == null)

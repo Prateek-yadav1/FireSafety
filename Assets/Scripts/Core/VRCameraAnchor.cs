@@ -3,23 +3,37 @@ using UnityEngine.XR;
 
 /// <summary>
 /// VRCameraAnchor — HIGHEST PRIORITY script that forces the XR rig to stay
-/// inside the kitchen at all times, even when the Oculus XR Plugin overrides
-/// camera position after LateUpdate.
+/// inside the current active room (Room 01 Orientation Studio or Room 02 Kitchen),
+/// even when the Oculus XR Plugin overrides camera position after LateUpdate.
 ///
 /// Strategy: We use Application.onBeforeRender which fires AFTER the XR driver
 /// has applied HMD tracking but BEFORE the frame is rendered to the display.
 /// This is the only reliable hook to override XR position on Quest hardware.
-///
-/// The XR system positions the "XR Origin" (camera root) at tracking-space origin.
-/// We find that root and move it to kitchen coordinates so HMD-relative offsets
-/// land the player inside the kitchen rather than at world origin.
 /// </summary>
 [DefaultExecutionOrder(-32000)]
 public class VRCameraAnchor : MonoBehaviour
 {
-    // Kitchen anchor — player rig root goes here
+    // Anchors
     public static readonly Vector3 KitchenAnchor   = new Vector3(202.8f, 0f, 0f);
-    public static readonly Vector3 KitchenPosition = new Vector3(202.8f, 1.6f, 0f);
+    public static readonly Quaternion KitchenRotation = Quaternion.Euler(0f, -90f, 0f);
+
+    public static Vector3 CurrentAnchor = Vector3.zero; // Starts in Room 01 (Orientation Studio)
+    public static Quaternion CurrentRotation = Quaternion.identity;
+    public static bool IsKitchenActive => CurrentAnchor.x > 100f;
+
+    public static void SetKitchenAnchor()
+    {
+        CurrentAnchor = KitchenAnchor;
+        CurrentRotation = KitchenRotation;
+        Debug.Log("[VRCameraAnchor] Switched active anchor to ROOM 02 (Kitchen).");
+    }
+
+    public static void SetRoom01Anchor()
+    {
+        CurrentAnchor = Vector3.zero;
+        CurrentRotation = Quaternion.identity;
+        Debug.Log("[VRCameraAnchor] Switched active anchor to ROOM 01 (Orientation Studio).");
+    }
 
     private Transform _xrRigRoot;   // topmost XR-controlled transform above Camera.main
     private bool      _vrActive;
@@ -47,8 +61,8 @@ public class VRCameraAnchor : MonoBehaviour
         if (_vrActive)
         {
             FindXRRigRoot();
-            ApplyKitchenAnchor();
-            Debug.Log("[VRCameraAnchor] VR mode — kitchen anchor applied to XR rig root.");
+            ApplyActiveAnchor();
+            Debug.Log($"[VRCameraAnchor] VR mode — anchor applied to '{_xrRigRoot?.name}'.");
         }
         else
         {
@@ -58,12 +72,11 @@ public class VRCameraAnchor : MonoBehaviour
 
     private void LateUpdate()
     {
-        // Re-check VR state (may become active after a few frames on first run)
         _vrActive = XRSettings.isDeviceActive;
         if (!_vrActive) return;
 
         FindXRRigRoot();
-        ApplyKitchenAnchor();
+        ApplyActiveAnchor();
     }
 
     // ─── Core: Called AFTER XR driver updates, BEFORE rendering ──────────────
@@ -72,7 +85,7 @@ public class VRCameraAnchor : MonoBehaviour
     {
         if (!_vrActive) return;
         FindXRRigRoot();
-        ApplyKitchenAnchor();
+        ApplyActiveAnchor();
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -90,11 +103,11 @@ public class VRCameraAnchor : MonoBehaviour
             if (rigGO == null)
             {
                 rigGO = new GameObject("VR_Player_Rig");
-                rigGO.transform.position = KitchenAnchor;
-                rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+                rigGO.transform.position = CurrentAnchor;
+                rigGO.transform.rotation = CurrentRotation;
             }
             cam.transform.SetParent(rigGO.transform, false);
-            cam.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+            cam.transform.localPosition = new Vector3(0f, 1.55f, IsKitchenActive ? 0f : 0.45f);
             cam.transform.localRotation = Quaternion.identity;
             _xrRigRoot = rigGO.transform;
             return;
@@ -113,18 +126,26 @@ public class VRCameraAnchor : MonoBehaviour
         _xrRigRoot = topmost;
     }
 
-    private void ApplyKitchenAnchor()
+    private void ApplyActiveAnchor()
     {
         if (_xrRigRoot == null) FindXRRigRoot();
         if (_xrRigRoot == null) return;
 
-        // Only correct if the rig root is nowhere near the kitchen
-        // (allow some movement freedom within kitchen bounds)
-        if (_xrRigRoot.position.x < 180f || _xrRigRoot.position.x > 220f)
+        if (IsKitchenActive)
         {
-            _xrRigRoot.position = KitchenAnchor;
-            _xrRigRoot.rotation = Quaternion.Euler(0f, -90f, 0f);
-            Debug.Log($"[VRCameraAnchor] Anchored XR rig root '{_xrRigRoot.name}' to kitchen {KitchenAnchor}");
+            if (_xrRigRoot.position.x < 180f || _xrRigRoot.position.x > 220f)
+            {
+                _xrRigRoot.position = CurrentAnchor;
+                _xrRigRoot.rotation = CurrentRotation;
+            }
+        }
+        else
+        {
+            if (_xrRigRoot.position.x > 50f)
+            {
+                _xrRigRoot.position = CurrentAnchor;
+                _xrRigRoot.rotation = CurrentRotation;
+            }
         }
     }
 }
