@@ -128,8 +128,8 @@ namespace FireSafety.Fire
                     float t = (float)i / sampleRate;
                     roarPhase += (80f + Mathf.PerlinNoise(t * 4f, 0f) * 60f) / sampleRate;
                     float roar = Mathf.Sin(2f * Mathf.PI * roarPhase) * 0.45f;
-                    float noise = (Random.value * 2f - 1f) * 0.35f;
-                    float crackle = (Random.value < 0.004f) ? (Random.value * 2f - 1f) * 0.9f : 0f;
+                    float noise = (UnityEngine.Random.value * 2f - 1f) * 0.35f;
+                    float crackle = (UnityEngine.Random.value < 0.004f) ? (UnityEngine.Random.value * 2f - 1f) * 0.9f : 0f;
                     data[i] = Mathf.Clamp(roar + noise + crackle, -1f, 1f);
                 }
                 clip = AudioClip.Create("Procedural_Fire_Crackling", samples, 1, sampleRate, false);

@@ -289,7 +289,7 @@ public class PowerSwitchController : MonoBehaviour
             float t = (float)i / sampleRate;
             float click = Mathf.Sin(2f * Mathf.PI * 1800f * t) * Mathf.Exp(-t * 80f);
             float thud  = Mathf.Sin(2f * Mathf.PI * 130f  * t) * Mathf.Exp(-t * 22f);
-            float snap  = (Random.value * 2f - 1f) * Mathf.Exp(-t * 120f) * 0.4f;
+            float snap  = (UnityEngine.Random.value * 2f - 1f) * Mathf.Exp(-t * 120f) * 0.4f;
             data[i] = Mathf.Clamp(click * 0.6f + thud * 0.7f + snap, -1f, 1f);
         }
         AudioClip clip = AudioClip.Create("Breaker_Switch_Clunk", samples, 1, sampleRate, false);

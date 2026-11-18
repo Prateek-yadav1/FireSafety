@@ -186,7 +186,7 @@ namespace FireSafety.Extinguishers
                 float[] data = new float[samples];
                 for (int i = 0; i < samples; i++)
                 {
-                    float noise = (Random.value * 2f - 1f) * 0.65f;
+                    float noise = (UnityEngine.Random.value * 2f - 1f) * 0.65f;
                     data[i] = noise;
                 }
                 dischargeSound = AudioClip.Create("Discharge_Synthetic", samples, 1, sampleRate, false);
