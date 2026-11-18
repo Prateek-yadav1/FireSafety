@@ -445,6 +445,35 @@ public class TrainingHUD : MonoBehaviour
         onFinished?.Invoke();
     }
 
+    // ─── Public API for external callers ────────────────────────────────────
+
+    /// <summary>Called by VRControllerManager when right trigger is pressed on a modal screen.</summary>
+    public void OnVRTriggerPressed()
+    {
+        // Advance modal state only on screens that await a proceed action
+        switch (currentState)
+        {
+            case TrainingState.WelcomeScreen:
+                AdvanceTo(TrainingState.SelectEnvironment);
+                break;
+            case TrainingState.SelectEnvironment:
+                RedirectToKitchen();
+                break;
+            case TrainingState.KitchenBriefing:
+                AdvanceTo(TrainingState.FireIgnition);
+                break;
+            case TrainingState.FireIgnition:
+                AdvanceTo(TrainingState.Obj01_Alarm);
+                break;
+            case TrainingState.Obj04_PASSProcedure:
+                AdvanceTo(TrainingState.Obj05_Extinguishing);
+                break;
+        }
+    }
+
+    /// <summary>Debug: skip current objective (called by [T] key).</summary>
+    public void DebugSkipObjective() { DebugSkip(); }
+
     // ─── Extinguisher Selection & Safety Warnings ─────────────────────────────
     public void OnExtinguisherSelected(ExtinguisherType type)
     {
@@ -1064,9 +1093,9 @@ public class TrainingHUD : MonoBehaviour
             if (fireVFX != null) fireVFX.ExtinguishFire();
             currentRoomId = "ROOM 01";
 
-            // Teleport back to Room 01
+            // Reset position inside kitchen
             if (playerController != null)
-                playerController.Teleport(new Vector3(0f, 1.55f, 0.45f), Vector3.zero);
+                playerController.Teleport(new Vector3(202.80f, 1.60f, 0.0f), new Vector3(0f, -90f, 0f));
 
             AdvanceTo(TrainingState.WelcomeScreen);
         }

@@ -39,10 +39,10 @@ public static class FireSafetyMasterBootstrap
     public static void EnsureFullExperience()
     {
         // ── 1. Lighting ──────────────────────────────────────────────────────
-        RenderSettings.ambientMode  = AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.38f, 0.40f, 0.44f);
+        RenderSettings.ambientMode      = AmbientMode.Flat;
+        RenderSettings.ambientLight     = new Color(0.38f, 0.40f, 0.44f);
         RenderSettings.ambientIntensity = 1.0f;
-        RenderSettings.fog = false;
+        RenderSettings.fog              = false;
 
         // ── 2. Directional light ─────────────────────────────────────────────
         EnsureDirectionalLight();
@@ -81,6 +81,7 @@ public static class FireSafetyMasterBootstrap
 
     private static void EnsureCameraAndControllers()
     {
+        // ── Find or create camera ──
         Camera cam = Camera.main;
         if (cam == null) cam = Object.FindObjectOfType<Camera>();
         if (cam == null)
@@ -88,15 +89,18 @@ public static class FireSafetyMasterBootstrap
             var go = new GameObject("Main Camera");
             go.tag = "MainCamera";
             cam    = go.AddComponent<Camera>();
+            go.AddComponent<AudioListener>();
         }
 
         // ── Camera render settings ──
-        cam.clearFlags       = CameraClearFlags.SolidColor;
-        cam.backgroundColor  = new Color(0.06f, 0.07f, 0.09f, 1f);
-        cam.nearClipPlane    = 0.05f;
-        cam.farClipPlane     = 1000f;
+        cam.clearFlags      = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.06f, 0.07f, 0.09f, 1f);
+        cam.nearClipPlane   = 0.05f;
+        cam.farClipPlane    = 500f;
+        cam.fieldOfView     = 70f;
 
-        // ── Ensure VR_Player_Rig exists inside Kitchen ──
+        // ── Build VR_Player_Rig hierarchy ──
+        // The rig sits at floor level (y=0), camera sits at eye height as child
         GameObject rigGO = GameObject.Find("VR_Player_Rig");
         if (rigGO == null)
         {
@@ -104,26 +108,41 @@ public static class FireSafetyMasterBootstrap
             rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
             rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
         }
+        else
+        {
+            // Ensure rig is at kitchen
+            if (rigGO.transform.position.x < 100f)
+            {
+                rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
+                rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+            }
+        }
 
+        // Parent camera to rig
         if (cam.transform.parent != rigGO.transform)
         {
             cam.transform.SetParent(rigGO.transform, false);
-            cam.transform.localPosition = new Vector3(0f, 1.60f, 0f);
+            cam.transform.localPosition = new Vector3(0f, 1.6f, 0f);
             cam.transform.localRotation = Quaternion.identity;
         }
 
-        // ── Components ──
-        if (cam.GetComponent<AudioListener>() == null)
-            cam.gameObject.AddComponent<AudioListener>();
-
+        // ── Add KitchenPlayerController to camera ──
         if (cam.GetComponent<KitchenPlayerController>() == null)
             cam.gameObject.AddComponent<KitchenPlayerController>();
 
+        // ── Add VRCameraAnchor to camera (for Quest VR) ──
+        if (cam.GetComponent<VRCameraAnchor>() == null)
+            cam.gameObject.AddComponent<VRCameraAnchor>();
+
+        // ── Add TrainingHUD to camera ──
+        if (cam.GetComponent<TrainingHUD>() == null)
+            cam.gameObject.AddComponent<TrainingHUD>();
+
+        // ── Add VRControllerManager to camera ──
         if (cam.GetComponent<VRControllerManager>() == null)
             cam.gameObject.AddComponent<VRControllerManager>();
 
-        if (cam.GetComponent<TrainingHUD>() == null)
-            cam.gameObject.AddComponent<TrainingHUD>();
+        Debug.Log($"[FireSafetyMasterBootstrap] Camera at world={cam.transform.position}, rig at {rigGO.transform.position}");
     }
 
     // ─── Floor Collider ───────────────────────────────────────────────────────
@@ -211,8 +230,9 @@ public static class FireSafetyMasterBootstrap
     {
         if (Object.FindObjectOfType<VRTrainingBoard>() != null) return;
         var go = new GameObject("VR_Training_Hologram_Board");
-        go.transform.position    = new Vector3(202.8f, 1.8f, 1.8f);
-        go.transform.eulerAngles = new Vector3(0f, -25f, 0f);
+        // VRTrainingBoard.Start() will set the final position and rotation
+        go.transform.position    = new Vector3(201.75f, 1.55f, 1.35f);
+        go.transform.eulerAngles = new Vector3(0f, 155f, 0f);
         go.AddComponent<VRTrainingBoard>();
     }
 
@@ -220,7 +240,6 @@ public static class FireSafetyMasterBootstrap
 
     private static void EnsureDirectionalLight()
     {
-        // Check if there's already a directional light
         var lights = Object.FindObjectsOfType<Light>();
         foreach (var l in lights)
             if (l.type == LightType.Directional) return;

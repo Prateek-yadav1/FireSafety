@@ -48,8 +48,11 @@ namespace FireSafety.Training
         private void BuildBoardVisuals()
         {
             // Positioned inside kitchen: near prep island/wall, clearly visible to player at (202.8, 1.55, 0.5)
+            // Board positioned to player's left and forward.
+            // Player is at (202.8, 1.6, 0) facing -X (yaw=-90).
+            // Board faces TOWARD player: Y=155° (front face points in +X,-Z direction toward player).
             transform.position = new Vector3(201.75f, 1.55f, 1.35f);
-            transform.rotation = Quaternion.Euler(0f, -25f, 0f); // Tilted facing trainee cleanly so text is not mirrored
+            transform.rotation = Quaternion.Euler(0f, 155f, 0f); // 155° = board front faces toward player position
 
             Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
             if (litShader == null) litShader = Shader.Find("Standard");
