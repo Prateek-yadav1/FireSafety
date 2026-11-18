@@ -10,6 +10,21 @@ using FireSafety.Environment;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
+
+[InitializeOnLoad]
+public static class FireSafetyEditorAutoFix
+{
+    static FireSafetyEditorAutoFix()
+    {
+        EditorApplication.delayCall += () =>
+        {
+            if (!EditorApplication.isPlayingOrWillChangePlaymode && !BuildPipeline.isBuildingPlayer)
+            {
+                FireSafetyMasterBootstrap.EnsureFullExperience();
+            }
+        };
+    }
+}
 #endif
 
 /// <summary>

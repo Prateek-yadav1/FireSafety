@@ -5,28 +5,33 @@ using FireSafety.Fire;
 using FireSafety.Interactions;
 
 /// <summary>
-/// First-Person Desktop & Editor Walkthrough Controller for the VR Fire Safety Simulation.
-/// Seamlessly provides full mouse-look, WASD walking, and object interaction on Desktop,
-/// while yielding camera rotation to VR hardware when a physical headset is tracking.
+/// Dual Desktop & VR Walkthrough Controller.
+/// Uses a robust Player Rig architecture so Unity's XR stereo eye driver
+/// NEVER blocks WASD movement or 360-degree rotation!
 /// </summary>
 public class KitchenPlayerController : MonoBehaviour
 {
     [Header("Movement")]
-    [SerializeField] private float moveSpeed = 2.8f;
-    [SerializeField] private float sprintSpeed = 5.0f;
+    [SerializeField] private float moveSpeed = 3.0f;
+    [SerializeField] private float sprintSpeed = 5.2f;
 
-    [Header("Mouse Look")]
-    [SerializeField] private float mouseSensitivity = 2.4f;
+    [Header("Mouse & Keyboard Look")]
+    [SerializeField] private float mouseSensitivity = 3.0f;
+    [SerializeField] private float keyboardTurnSpeed = 75f;
     [SerializeField] private float maxPitch = 82f;
     [SerializeField] private float minPitch = -78f;
 
     [Header("Interaction Raycast")]
-    [SerializeField] private float interactionDistance = 4.0f;
+    [SerializeField] private float interactionDistance = 4.5f;
 
     private float pitch = 0f;
-    private float yaw = 0f;
+    private float yaw = -90f; // Default facing stove
     private bool isCursorLocked = true;
     private FireExtinguisher activeHeldExtinguisher;
+
+    // Rig hierarchy references
+    private Transform playerRoot;
+    private Transform cameraTransform;
 
     // Kitchen boundary box
     private const float KitchenMinX = 199.0f;
@@ -35,14 +40,58 @@ public class KitchenPlayerController : MonoBehaviour
     private const float KitchenMaxZ = 3.8f;
     private const float PlayerEyeHeight = 1.60f;
 
+    public Transform PlayerRoot => playerRoot != null ? playerRoot : transform;
+
+    private void Awake()
+    {
+        EnsurePlayerRig();
+    }
+
+    private void EnsurePlayerRig()
+    {
+        Camera cam = GetComponent<Camera>();
+        if (cam == null) cam = Camera.main;
+
+        if (cam != null)
+        {
+            cameraTransform = cam.transform;
+
+            // If camera is at top-level without a parent rig, wrap it in a Player Rig
+            if (cameraTransform.parent == null)
+            {
+                GameObject rigGO = new GameObject("VR_Player_Rig");
+                rigGO.transform.position = new Vector3(cameraTransform.position.x, 0f, cameraTransform.position.z);
+                rigGO.transform.rotation = Quaternion.Euler(0f, cameraTransform.eulerAngles.y, 0f);
+
+                cameraTransform.SetParent(rigGO.transform, false);
+                cameraTransform.localPosition = new Vector3(0f, PlayerEyeHeight, 0f);
+                cameraTransform.localRotation = Quaternion.identity;
+
+                playerRoot = rigGO.transform;
+            }
+            else
+            {
+                playerRoot = cameraTransform.parent;
+            }
+        }
+        else
+        {
+            playerRoot = transform;
+            cameraTransform = transform;
+        }
+
+        // Initialize angles
+        if (playerRoot != null)
+        {
+            yaw = playerRoot.eulerAngles.y;
+        }
+    }
+
     private void Start()
     {
-        Vector3 angles = transform.eulerAngles;
-        pitch = angles.x > 180f ? angles.x - 360f : angles.x;
-        yaw = angles.y;
-
+        EnsurePlayerRig();
         SetCursorLock(true);
-        Debug.Log("[KitchenPlayerController] Active. WASD to walk, Mouse to look around, Left Click to interact.");
+        Debug.Log("[KitchenPlayerController] Active! WASD or Arrow Keys to walk, Mouse or Q/E to rotate 360°.");
     }
 
     public void SetCursorLock(bool locked)
@@ -54,7 +103,7 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void Update()
     {
-        HandleMouseLook();
+        HandleRotation();
         HandleMovement();
         HandleQuickEquipKeys();
         TrackHeldExtinguisher();
@@ -65,27 +114,15 @@ public class KitchenPlayerController : MonoBehaviour
         }
     }
 
-    private void HandleMouseLook()
+    private void HandleRotation()
     {
-        // When in VR on actual headset, let HMD sensors drive head rotation
-#if !UNITY_EDITOR
-        if (XRSettings.isDeviceActive)
-        {
-            var hmd = InputDevices.GetDeviceAtXRNode(XRNode.Head);
-            if (hmd.isValid && hmd.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion hmdRot) && hmdRot != Quaternion.identity)
-            {
-                return;
-            }
-        }
-#endif
-
         // Toggle cursor lock with ESC
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             SetCursorLock(!isCursorLocked);
         }
 
-        // Left click inside game view re-locks cursor
+        // Left click re-locks cursor
         if (!isCursorLocked && Input.GetMouseButtonDown(0))
         {
             var hud = FindObjectOfType<TrainingHUD>();
@@ -97,17 +134,37 @@ public class KitchenPlayerController : MonoBehaviour
             }
         }
 
-        // Rotate camera with mouse whenever cursor is locked OR when right mouse is held
-        if (isCursorLocked || Input.GetMouseButton(1))
+        // 1. Mouse Input
+        float mouseX = 0f, mouseY = 0f;
+        if (isCursorLocked || Input.GetMouseButton(0) || Input.GetMouseButton(1))
         {
-            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+            mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
+            mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+        }
 
-            yaw += mouseX;
-            pitch -= mouseY;
-            pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+        // 2. Keyboard Turn Input (Q/E or Left/Right Arrow) - guarantees 100% turn responsiveness on any OS!
+        float keyTurn = 0f;
+        if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow)) keyTurn = -1f;
+        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) keyTurn = 1f;
 
-            transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+        float keyPitch = 0f;
+        if (Input.GetKey(KeyCode.UpArrow)) keyPitch = 1f;
+        if (Input.GetKey(KeyCode.DownArrow)) keyPitch = -1f;
+
+        yaw += mouseX + (keyTurn * keyboardTurnSpeed * Time.deltaTime);
+        pitch -= mouseY + (keyPitch * keyboardTurnSpeed * 0.7f * Time.deltaTime);
+        pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+
+        // Apply Horizontal Yaw to the Player Rig (NEVER overridden by XR eye driver!)
+        if (playerRoot != null)
+        {
+            playerRoot.rotation = Quaternion.Euler(0f, yaw, 0f);
+        }
+
+        // Apply Vertical Pitch to the Camera
+        if (cameraTransform != null)
+        {
+            cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
         }
     }
 
@@ -115,53 +172,63 @@ public class KitchenPlayerController : MonoBehaviour
     {
         float speed = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? sprintSpeed : moveSpeed;
 
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
+        float h = 0f, v = 0f;
 
-        // Direct key fallback (ensures 100% responsiveness on any platform / focus state)
-        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) v = 1f;
-        else if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) v = -1f;
+        // Read direct keys for 100% fail-proof responsiveness
+        if (Input.GetKey(KeyCode.W)) v += 1f;
+        if (Input.GetKey(KeyCode.S)) v -= 1f;
+        if (Input.GetKey(KeyCode.A)) h -= 1f;
+        if (Input.GetKey(KeyCode.D)) h += 1f;
 
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) h = -1f;
-        else if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) h = 1f;
+        // Also add Input Manager axes
+        h += Input.GetAxisRaw("Horizontal");
+        v += Input.GetAxisRaw("Vertical");
+
+        h = Mathf.Clamp(h, -1f, 1f);
+        v = Mathf.Clamp(v, -1f, 1f);
 
         if (Mathf.Abs(h) > 0.01f || Mathf.Abs(v) > 0.01f)
         {
-            Vector3 forward = transform.forward;
-            forward.y = 0f;
-            forward.Normalize();
-
-            Vector3 right = transform.right;
-            right.y = 0f;
-            right.Normalize();
+            Transform orient = playerRoot != null ? playerRoot : transform;
+            Vector3 forward = orient.forward; forward.y = 0f; forward.Normalize();
+            Vector3 right = orient.right; right.y = 0f; right.Normalize();
 
             Vector3 moveDir = (forward * v + right * h).normalized;
-            Vector3 newPos = transform.position + moveDir * (speed * Time.deltaTime);
+            Transform target = playerRoot != null ? playerRoot : transform;
+            Vector3 newPos = target.position + moveDir * (speed * Time.deltaTime);
 
-            if (transform.position.x > 100f)
+            if (newPos.x > 100f)
             {
-                newPos.y = PlayerEyeHeight;
+                newPos.y = 0f; // Rig sits on floor
                 newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
                 newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
             }
 
-            transform.position = newPos;
+            target.position = newPos;
         }
     }
 
     public void Teleport(Vector3 targetPosition, Vector3 targetEuler)
     {
-        transform.position = targetPosition;
-        pitch = targetEuler.x > 180f ? targetEuler.x - 360f : targetEuler.x;
+        EnsurePlayerRig();
+        Transform target = playerRoot != null ? playerRoot : transform;
+        target.position = new Vector3(targetPosition.x, 0f, targetPosition.z);
         yaw = targetEuler.y;
-        transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+        target.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+        pitch = targetEuler.x > 180f ? targetEuler.x - 360f : targetEuler.x;
+        if (cameraTransform != null)
+        {
+            cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        }
     }
 
     private void HandleInteractionRaycast()
     {
-        if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.E))
+        if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.F))
         {
-            Ray ray = new Ray(transform.position, transform.forward);
+            Transform origin = cameraTransform != null ? cameraTransform : transform;
+            Ray ray = new Ray(origin.position, origin.forward);
             if (Physics.Raycast(ray, out RaycastHit hit, interactionDistance))
             {
                 // 1. Pick up extinguisher
@@ -173,7 +240,7 @@ public class KitchenPlayerController : MonoBehaviour
                         activeHeldExtinguisher.Drop();
                     }
 
-                    extinguisher.Pickup(transform);
+                    extinguisher.Pickup(origin);
                     activeHeldExtinguisher = extinguisher;
 
                     var hud = FindObjectOfType<TrainingHUD>();
@@ -219,6 +286,7 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void EquipExtinguisherByType(ExtinguisherType type)
     {
+        Transform origin = cameraTransform != null ? cameraTransform : transform;
         foreach (var ext in FindObjectsOfType<FireExtinguisher>())
         {
             if (ext.Type == type)
@@ -228,7 +296,7 @@ public class KitchenPlayerController : MonoBehaviour
                     activeHeldExtinguisher.Drop();
                 }
 
-                ext.Pickup(transform);
+                ext.Pickup(origin);
                 activeHeldExtinguisher = ext;
 
                 var hud = FindObjectOfType<TrainingHUD>();

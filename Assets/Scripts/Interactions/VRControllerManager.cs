@@ -352,6 +352,8 @@ namespace FireSafety.Interactions
 
         private void HandleVRLocomotion()
         {
+            Transform rig = transform.parent != null ? transform.parent : transform;
+
             // ─── 1. Left Thumbstick Locomotion (Move) ───────────────────────────
             Vector2 leftStick = Vector2.zero;
             if (leftController.isValid)
@@ -366,17 +368,17 @@ namespace FireSafety.Interactions
                 Vector3 right = cam.right; right.y = 0f; right.Normalize();
 
                 Vector3 moveDir = (forward * leftStick.y + right * leftStick.x).normalized;
-                Vector3 targetPos = transform.position + moveDir * (vrMoveSpeed * Time.deltaTime);
+                Vector3 targetPos = rig.position + moveDir * (vrMoveSpeed * Time.deltaTime);
 
                 // Kitchen boundaries check
-                if (transform.position.x > 100f)
+                if (rig.position.x > 100f)
                 {
                     targetPos.x = Mathf.Clamp(targetPos.x, KitchenMinX, KitchenMaxX);
                     targetPos.z = Mathf.Clamp(targetPos.z, KitchenMinZ, KitchenMaxZ);
-                    targetPos.y = PlayerEyeHeight;
+                    targetPos.y = 0f;
                 }
 
-                transform.position = targetPos;
+                rig.position = targetPos;
             }
 
             // ─── 2. Right Thumbstick Snap Turn ──────────────────────────────────
@@ -389,7 +391,7 @@ namespace FireSafety.Interactions
             if (Mathf.Abs(rightStick.x) > 0.65f && Time.time - lastTurnTime > turnCooldown)
             {
                 float turnDir = Mathf.Sign(rightStick.x);
-                transform.Rotate(0f, turnDir * snapTurnAngle, 0f, Space.World);
+                rig.Rotate(0f, turnDir * snapTurnAngle, 0f, Space.World);
                 lastTurnTime = Time.time;
                 TriggerHaptic(rightController, 0.25f, 0.06f);
             }
