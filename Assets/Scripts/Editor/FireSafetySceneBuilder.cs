@@ -40,6 +40,7 @@ public static class FireSafetySceneBuilder
     {
         Debug.Log("[FireSafetySceneBuilder] ═══ Starting full two-room scene setup ═══");
 
+        XRAndroidSetup.EnsureQuestConfiguration();
         Step1_BuildOrientationRoom01();
         Step2_PositionCameraInRoom01();
         Step3_MoveFireToKitchenChimney();

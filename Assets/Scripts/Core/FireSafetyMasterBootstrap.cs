@@ -30,6 +30,7 @@ public static class FireSafetyMasterBootstrap
     public static void EditorSetup()
     {
         Debug.Log("[FireSafetyMasterBootstrap] Editor 1-Click Setup...");
+        XRAndroidSetup.EnsureQuestConfiguration();
         EnsureFullExperience();
     }
 #endif
