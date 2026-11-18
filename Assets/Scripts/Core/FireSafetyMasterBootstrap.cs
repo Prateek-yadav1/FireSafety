@@ -1,6 +1,5 @@
 using UnityEngine;
-using UnityEngine.XR;
-using System.Collections.Generic;
+using UnityEngine.Rendering;
 using FireSafety.Extinguishers;
 using FireSafety.Fire;
 using FireSafety.Training;
@@ -9,66 +8,76 @@ using FireSafety.Environment;
 
 #if UNITY_EDITOR
 using UnityEditor;
-using UnityEditor.SceneManagement;
 #endif
 
 /// <summary>
-/// FireSafetyMasterBootstrap: The master auto-repair and setup system.
-/// Guarantees that EVERY object, controller, and connection is 100% created,
-/// positioned, wired, and active — both in VR (Meta Quest) and Desktop!
+/// FireSafetyMasterBootstrap — single entry point that guarantees the entire
+/// scene is wired and ready for both Desktop (WASD) and Meta Quest VR.
+///
+/// Runs automatically at scene load via [RuntimeInitializeOnLoadMethod].
 /// </summary>
 public static class FireSafetyMasterBootstrap
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     public static void RuntimeSetup()
     {
-        Debug.Log("[FireSafetyMasterBootstrap] === Auto-Initializing Scene for VR & Desktop ===");
+        Debug.Log("[FireSafetyMasterBootstrap] === Booting Fire Safety VR Training ===");
         EnsureFullExperience();
     }
 
 #if UNITY_EDITOR
-    [MenuItem("FireSafety/⚡ 1-Click Fix & Setup Everything %#b", priority = -10)]
+    [MenuItem("FireSafety/⚡ 1-Click Setup Scene %#b", priority = -10)]
     public static void EditorSetup()
     {
-        Debug.Log("[FireSafetyMasterBootstrap] Running 1-Click Editor Fix...");
+        Debug.Log("[FireSafetyMasterBootstrap] Editor 1-Click Setup...");
         EnsureFullExperience();
     }
 #endif
 
+    // ═══════════════════════════════════════════════════════════════════════════
+
     public static void EnsureFullExperience()
     {
-        // 1. Camera & Player Rig Setup
-        EnsureCameraAndControllers();
+        // ── 1. Lighting ──────────────────────────────────────────────────────
+        RenderSettings.ambientMode  = AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.38f, 0.40f, 0.44f);
+        RenderSettings.ambientIntensity = 1.0f;
+        RenderSettings.fog = false;
 
-        // 2. Kitchen Floor Collider (prevents extinguishers falling through ground)
-        EnsureFloorCollider();
-
-        // 3. Fire VFX at Chimney Hood
-        EnsureFireVFX();
-
-        // 4. Extinguisher Wall Station (3 Extinguishers: Water, Powder, CO2)
-        EnsureExtinguisherStation();
-
-        // 5. Fire Alarm Unit
-        EnsureFireAlarm();
-
-        // 6. Power Switch & Room Lighting
-        EnsurePowerSwitchAndLighting();
-
-        // 7. Exit Sign
-        EnsureExitSign();
-
-        // 8. 3D In-World VR Hologram Board (for in-headset HUD)
-        EnsureVRHologramBoard();
-
-        // 9. Directional Light
+        // ── 2. Directional light ─────────────────────────────────────────────
         EnsureDirectionalLight();
 
-        // 10. Redesign cookware & pots
+        // ── 3. Camera + Controllers ──────────────────────────────────────────
+        EnsureCameraAndControllers();
+
+        // ── 4. Kitchen floor collider ────────────────────────────────────────
+        EnsureFloorCollider();
+
+        // ── 5. Fire VFX ──────────────────────────────────────────────────────
+        EnsureFireVFX();
+
+        // ── 6. Extinguisher wall station ─────────────────────────────────────
+        EnsureExtinguisherStation();
+
+        // ── 7. Fire alarm ────────────────────────────────────────────────────
+        EnsureFireAlarm();
+
+        // ── 8. Power switch ──────────────────────────────────────────────────
+        EnsurePowerSwitch();
+
+        // ── 9. Exit sign ─────────────────────────────────────────────────────
+        EnsureExitSign();
+
+        // ── 10. VR hologram board ────────────────────────────────────────────
+        EnsureVRHologramBoard();
+
+        // ── 11. Kitchen decor ────────────────────────────────────────────────
         KitchenDecorRedesigner.RedesignAllPots();
 
-        Debug.Log("[FireSafetyMasterBootstrap] ✓ All systems operational! Desktop WASD/Mouse & Quest VR ready.");
+        Debug.Log("[FireSafetyMasterBootstrap] ✓ All systems ready. Desktop WASD + Quest VR.");
     }
+
+    // ─── Camera + Controllers ─────────────────────────────────────────────────
 
     private static void EnsureCameraAndControllers()
     {
@@ -76,157 +85,151 @@ public static class FireSafetyMasterBootstrap
         if (cam == null) cam = Object.FindObjectOfType<Camera>();
         if (cam == null)
         {
-            GameObject camGO = new GameObject("Main Camera");
-            camGO.tag = "MainCamera";
-            cam = camGO.AddComponent<Camera>();
+            var go = new GameObject("Main Camera");
+            go.tag = "MainCamera";
+            cam    = go.AddComponent<Camera>();
         }
 
-        // Set clear flags to solid dark (prevents passthrough bleed & sky bleed)
-        cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.06f, 0.07f, 0.09f, 1.0f);
-        cam.nearClipPlane = 0.05f;
-        cam.farClipPlane = 1000f;
+        // ── Camera render settings ──
+        cam.clearFlags       = CameraClearFlags.SolidColor;
+        cam.backgroundColor  = new Color(0.06f, 0.07f, 0.09f, 1f);
+        cam.nearClipPlane    = 0.05f;
+        cam.farClipPlane     = 1000f;
 
-        // Position inside kitchen facing stove/fire
-        if (cam.transform.position.x < 100f)
+        // ── Ensure VR_Player_Rig exists inside Kitchen ──
+        GameObject rigGO = GameObject.Find("VR_Player_Rig");
+        if (rigGO == null)
         {
-            cam.transform.position = new Vector3(202.8f, 1.60f, 0.0f);
-            cam.transform.eulerAngles = new Vector3(0f, -90f, 0f);
+            rigGO = new GameObject("VR_Player_Rig");
+            rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
+            rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
         }
 
-        // AudioListener
+        if (cam.transform.parent != rigGO.transform)
+        {
+            cam.transform.SetParent(rigGO.transform, false);
+            cam.transform.localPosition = new Vector3(0f, 1.60f, 0f);
+            cam.transform.localRotation = Quaternion.identity;
+        }
+
+        // ── Components ──
         if (cam.GetComponent<AudioListener>() == null)
-        {
             cam.gameObject.AddComponent<AudioListener>();
-        }
 
-        // KitchenPlayerController (Desktop WASD + Mouse Look)
         if (cam.GetComponent<KitchenPlayerController>() == null)
-        {
             cam.gameObject.AddComponent<KitchenPlayerController>();
-        }
 
-        // VRControllerManager (Quest 6-DoF HMD + Dual Touch Controllers + Hands + Lasers)
         if (cam.GetComponent<VRControllerManager>() == null)
-        {
             cam.gameObject.AddComponent<VRControllerManager>();
-        }
 
-        // TrainingHUD (Objectives, Briefing, PASS procedure, Scoring)
         if (cam.GetComponent<TrainingHUD>() == null)
-        {
             cam.gameObject.AddComponent<TrainingHUD>();
-        }
     }
+
+    // ─── Floor Collider ───────────────────────────────────────────────────────
 
     private static void EnsureFloorCollider()
     {
-        GameObject floor = GameObject.Find("Kitchen_Floor_Collider");
-        if (floor == null)
-        {
-            floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            floor.name = "Kitchen_Floor_Collider";
-            floor.transform.position = new Vector3(202.45f, -0.05f, 0f);
-            floor.transform.localScale = new Vector3(15f, 0.1f, 15f);
-            var r = floor.GetComponent<Renderer>();
-            if (r != null) r.enabled = false;
-        }
+        if (GameObject.Find("Kitchen_Floor_Collider") != null) return;
+
+        var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        floor.name = "Kitchen_Floor_Collider";
+        floor.transform.position   = new Vector3(202.45f, -0.05f, 0f);
+        floor.transform.localScale = new Vector3(16f, 0.1f, 10f);
+        var r = floor.GetComponent<Renderer>();
+        if (r != null) r.enabled = false;
     }
+
+    // ─── Fire VFX ─────────────────────────────────────────────────────────────
 
     private static void EnsureFireVFX()
     {
-        GameObject fireGO = GameObject.Find("Kitchen_Fire_VFX");
-        if (fireGO == null)
-        {
-            fireGO = new GameObject("Kitchen_Fire_VFX");
-        }
-        fireGO.transform.position = new Vector3(200.18f, 1.48f, 0.17f);
-        if (fireGO.GetComponent<FireVFXController>() == null)
-        {
-            fireGO.AddComponent<FireVFXController>();
-        }
+        GameObject go = GameObject.Find("Kitchen_Fire_VFX");
+        if (go == null) go = new GameObject("Kitchen_Fire_VFX");
+        go.transform.position = new Vector3(200.31f, 1.374f, 0.16f);
+        if (go.GetComponent<FireVFXController>() == null)
+            go.AddComponent<FireVFXController>();
     }
+
+    // ─── Extinguisher Station ─────────────────────────────────────────────────
 
     private static void EnsureExtinguisherStation()
     {
-        GameObject stationGO = GameObject.Find("FireExtinguisher_WallStation");
-        if (stationGO == null)
+        GameObject go = GameObject.Find("FireExtinguisher_WallStation");
+        if (go == null)
         {
-            stationGO = new GameObject("FireExtinguisher_WallStation");
-            ExtinguisherStation.BuildWallStation(stationGO);
-            stationGO.AddComponent<ExtinguisherStation>();
+            go = new GameObject("FireExtinguisher_WallStation");
+            ExtinguisherStation.BuildWallStation(go);
+            go.AddComponent<ExtinguisherStation>();
         }
         else
         {
-            var stationComp = stationGO.GetComponent<ExtinguisherStation>();
-            if (stationComp == null) stationComp = stationGO.AddComponent<ExtinguisherStation>();
-            stationComp.FindSceneExtinguishers();
-            if (stationComp.Extinguishers.Count != 3)
-            {
-                ExtinguisherStation.BuildWallStation(stationGO);
-                stationComp.FindSceneExtinguishers();
-            }
+            var comp = go.GetComponent<ExtinguisherStation>();
+            if (comp == null) comp = go.AddComponent<ExtinguisherStation>();
+            comp.FindSceneExtinguishers();
+            if (comp.Extinguishers.Count < 1)
+                ExtinguisherStation.BuildWallStation(go);
         }
     }
+
+    // ─── Fire Alarm ───────────────────────────────────────────────────────────
 
     private static void EnsureFireAlarm()
     {
-        FireAlarmController alarm = Object.FindObjectOfType<FireAlarmController>();
-        if (alarm == null)
-        {
-            GameObject alarmGO = new GameObject("FireAlarm_Controller");
-            alarmGO.transform.position = new Vector3(205.40f, 1.45f, 1.20f);
-            alarmGO.transform.eulerAngles = new Vector3(0f, -90f, 0f);
-            alarmGO.AddComponent<FireAlarmController>();
-        }
+        if (Object.FindObjectOfType<FireAlarmController>() != null) return;
+        var go = new GameObject("FireAlarm_Controller");
+        go.transform.position    = new Vector3(205.40f, 1.45f, 1.20f);
+        go.transform.eulerAngles = new Vector3(0f, -90f, 0f);
+        go.AddComponent<FireAlarmController>();
     }
 
-    private static void EnsurePowerSwitchAndLighting()
+    // ─── Power Switch ─────────────────────────────────────────────────────────
+
+    private static void EnsurePowerSwitch()
     {
-        PowerSwitchController sw = Object.FindObjectOfType<PowerSwitchController>();
-        if (sw == null)
-        {
-            GameObject swGO = new GameObject("PowerSwitch_Controller");
-            swGO.transform.position = new Vector3(204.99f, 1.50f, 3.52f);
-            swGO.transform.eulerAngles = new Vector3(0f, -90f, 0f);
-            sw = swGO.AddComponent<PowerSwitchController>();
-        }
+        if (Object.FindObjectOfType<PowerSwitchController>() != null) return;
+        var go = new GameObject("PowerSwitch_Controller");
+        go.transform.position    = new Vector3(204.99f, 1.50f, 3.52f);
+        go.transform.eulerAngles = new Vector3(0f, -90f, 0f);
+        go.AddComponent<PowerSwitchController>();
     }
+
+    // ─── Exit Sign ────────────────────────────────────────────────────────────
 
     private static void EnsureExitSign()
     {
-        ExitSignController exit = Object.FindObjectOfType<ExitSignController>();
-        if (exit == null)
-        {
-            GameObject exitGO = new GameObject("ExitSign_Controller");
-            exitGO.transform.position = new Vector3(199.45f, 2.18f, 0.08f);
-            exitGO.transform.eulerAngles = new Vector3(0f, 90f, 0f);
-            exitGO.AddComponent<ExitSignController>();
-        }
+        if (Object.FindObjectOfType<ExitSignController>() != null) return;
+        var go = new GameObject("ExitSign_Controller");
+        go.transform.position    = new Vector3(199.45f, 2.18f, 0.08f);
+        go.transform.eulerAngles = new Vector3(0f, 90f, 0f);
+        go.AddComponent<ExitSignController>();
     }
+
+    // ─── VR Hologram Board ────────────────────────────────────────────────────
 
     private static void EnsureVRHologramBoard()
     {
-        VRTrainingBoard board = Object.FindObjectOfType<VRTrainingBoard>();
-        if (board == null)
-        {
-            GameObject boardGO = new GameObject("VR_Training_Hologram_Board");
-            boardGO.transform.position = new Vector3(202.8f, 1.8f, 1.8f);
-            boardGO.transform.eulerAngles = new Vector3(0f, -25f, 0f);
-            boardGO.AddComponent<VRTrainingBoard>();
-        }
+        if (Object.FindObjectOfType<VRTrainingBoard>() != null) return;
+        var go = new GameObject("VR_Training_Hologram_Board");
+        go.transform.position    = new Vector3(202.8f, 1.8f, 1.8f);
+        go.transform.eulerAngles = new Vector3(0f, -25f, 0f);
+        go.AddComponent<VRTrainingBoard>();
     }
+
+    // ─── Directional Light ────────────────────────────────────────────────────
 
     private static void EnsureDirectionalLight()
     {
-        if (Object.FindObjectOfType<Light>() == null)
-        {
-            GameObject lightGO = new GameObject("Directional Light");
-            Light dl = lightGO.AddComponent<Light>();
-            dl.type = LightType.Directional;
-            dl.intensity = 1.0f;
-            dl.color = new Color(1f, 0.96f, 0.88f);
-            lightGO.transform.eulerAngles = new Vector3(50f, -30f, 0f);
-        }
+        // Check if there's already a directional light
+        var lights = Object.FindObjectsOfType<Light>();
+        foreach (var l in lights)
+            if (l.type == LightType.Directional) return;
+
+        var go = new GameObject("Directional Light");
+        var dl = go.AddComponent<Light>();
+        dl.type      = LightType.Directional;
+        dl.intensity = 1.0f;
+        dl.color     = new Color(1f, 0.96f, 0.88f);
+        go.transform.eulerAngles = new Vector3(50f, -30f, 0f);
     }
 }

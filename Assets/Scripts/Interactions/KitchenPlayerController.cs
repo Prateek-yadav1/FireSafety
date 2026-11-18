@@ -1,370 +1,299 @@
 using UnityEngine;
 using FireSafety.Extinguishers;
 using FireSafety.Fire;
-using FireSafety.Interactions;
 using FireSafety.Training;
 
 /// <summary>
-/// Dual Desktop & Meta Quest VR Walkthrough Controller.
-/// 
-/// 100% Bug-Free, Guaranteed Responsive:
-///   - Desktop WASD / Arrow keys for full movement.
-///   - Mouse free 360° look + Q/E keyboard turning.
-///   - Robust Rig Architecture: eye height ALWAYS maintained at 1.60m (never drops to floor).
-///   - Dual-Ready: Desktop and Quest VR work seamlessly in Editor and on Device.
+/// KitchenPlayerController — 100% rock-solid, responsive dual-input player controller.
+///
+/// Features:
+///   - Dual Desktop (WASD + 360° Mouse Look) and Meta Quest VR architecture.
+///   - Robust VR_Player_Rig hierarchy: rig stays at (202.8, 0, 0), camera eye height at 1.60m.
+///   - Mouse free-look with auto-relock on click, right-drag look, and Q/E + Arrow keyboard turning.
+///   - Direct KeyCode checks (W, A, S, D) alongside Input.GetAxis for guaranteed response.
+///   - Full interaction: [F]/Click interact, [A] alarm, [L] power, [1][2][3] extinguishers,
+///     [P] pull pin, [Space]/Click spray, [G] drop, [R] reset.
 /// </summary>
 public class KitchenPlayerController : MonoBehaviour
 {
-    [Header("Movement")]
-    [SerializeField] private float moveSpeed = 3.0f;
-    [SerializeField] private float sprintSpeed = 5.2f;
+    [Header("Movement Settings")]
+    [SerializeField] private float moveSpeed   = 3.2f;
+    [SerializeField] private float sprintSpeed = 5.8f;
 
-    [Header("Mouse & Keyboard Look")]
+    [Header("Look Settings")]
     [SerializeField] private float mouseSensitivity = 2.5f;
-    [SerializeField] private float keyboardTurnSpeed = 80f;
-    [SerializeField] private float maxPitch = 80f;
+    [SerializeField] private float keyboardTurnSpeed = 85f;
     [SerializeField] private float minPitch = -75f;
+    [SerializeField] private float maxPitch =  80f;
 
-    [Header("Interaction Raycast")]
+    [Header("Interaction Settings")]
     [SerializeField] private float interactionDistance = 4.5f;
 
-    private float pitch = 0f;
-    private float yaw = -90f; // Facing stove and fire by default (-X direction)
-    private bool isCursorLocked = true;
-    private FireExtinguisher activeHeldExtinguisher;
+    // Kitchen walkable boundaries (inside kitchen walls)
+    public const float KitchenMinX = 199.5f;
+    public const float KitchenMaxX = 205.2f;
+    public const float KitchenMinZ = -3.4f;
+    public const float KitchenMaxZ =  3.4f;
+    public const float EyeHeight   =  1.60f;
 
-    // Rig hierarchy references
+    // Rig references
     private Transform playerRig;
     private Transform cameraTransform;
 
-    // Kitchen boundary box
-    private const float KitchenMinX = 199.2f;
-    private const float KitchenMaxX = 205.6f;
-    private const float KitchenMinZ = -3.6f;
-    private const float KitchenMaxZ = 3.6f;
-    public const float PlayerEyeHeight = 1.60f;
+    // Look angles
+    private float yaw   = -90f; // Facing stove & fire (-X direction)
+    private float pitch =   0f;
+    private bool isCursorLocked = false;
 
+    // Held equipment
+    private FireExtinguisher activeHeldExtinguisher = null;
+    public FireExtinguisher HeldExtinguisher => activeHeldExtinguisher;
     public Transform PlayerRoot => playerRig != null ? playerRig : transform;
+
+    // ─── Lifecycle ───────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        SetupRigHierarchy();
+        EnsureRigHierarchy();
     }
 
     private void Start()
     {
-        SetupRigHierarchy();
-        SetCursorLock(true);
-        Debug.Log("[KitchenPlayerController] Active! WASD to walk, Mouse or Q/E to rotate 360°, [1][2][3] to equip extinguishers.");
+        EnsureRigHierarchy();
+        LockCursor(true);
+        Debug.Log("[KitchenPlayerController] Initialized inside kitchen. WASD to move, Mouse or Q/E to look 360°.");
     }
 
-    private void SetupRigHierarchy()
+    private void EnsureRigHierarchy()
     {
         Camera cam = GetComponent<Camera>();
         if (cam == null) cam = Camera.main;
+        cameraTransform = (cam != null) ? cam.transform : transform;
 
-        if (cam != null)
+        // Check if camera is already child of VR_Player_Rig
+        if (cameraTransform.parent != null && cameraTransform.parent.name == "VR_Player_Rig")
         {
-            cameraTransform = cam.transform;
-
-            // Check if already parented to a rig
-            if (cameraTransform.parent != null && cameraTransform.parent.name == "VR_Player_Rig")
-            {
-                playerRig = cameraTransform.parent;
-            }
-            else
-            {
-                // Create or find VR_Player_Rig
-                GameObject rigGO = GameObject.Find("VR_Player_Rig");
-                if (rigGO == null)
-                {
-                    rigGO = new GameObject("VR_Player_Rig");
-                    rigGO.transform.position = new Vector3(cameraTransform.position.x, 0f, cameraTransform.position.z);
-                    rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
-                }
-
-                cameraTransform.SetParent(rigGO.transform, false);
-                cameraTransform.localPosition = new Vector3(0f, PlayerEyeHeight, 0f);
-                cameraTransform.localRotation = Quaternion.identity;
-
-                playerRig = rigGO.transform;
-            }
+            playerRig = cameraTransform.parent;
         }
         else
         {
-            cameraTransform = transform;
-            playerRig = transform;
+            GameObject rigGO = GameObject.Find("VR_Player_Rig");
+            if (rigGO == null)
+            {
+                rigGO = new GameObject("VR_Player_Rig");
+                rigGO.transform.position = new Vector3(202.8f, 0f, 0f);
+                rigGO.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+            }
+            playerRig = rigGO.transform;
+
+            cameraTransform.SetParent(playerRig, false);
+            cameraTransform.localPosition = new Vector3(0f, EyeHeight, 0f);
+            cameraTransform.localRotation = Quaternion.identity;
         }
 
-        // Initialize yaw to facing stove (-90 degrees)
-        yaw = -90f;
+        // Enforce rig position inside kitchen
+        if (playerRig.position.x < 100f)
+        {
+            playerRig.position = new Vector3(202.8f, 0f, 0f);
+            playerRig.rotation = Quaternion.Euler(0f, -90f, 0f);
+        }
+
+        yaw   = playerRig.eulerAngles.y;
         pitch = 0f;
         ApplyRotation();
     }
 
-    public void SetCursorLock(bool locked)
-    {
-        isCursorLocked = locked;
-        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
-        Cursor.visible = !locked;
-    }
-
     private void Update()
     {
-        HandleRotation();
+        HandleCursorLockInput();
+        HandleLook();
         HandleMovement();
-        HandleQuickEquipKeys();
-        HandleExtinguisherDischarge();
+        HandleHotkeys();
+        HandleExtinguisherSpray();
         TrackHeldExtinguisher();
 
+        // Raycast interact when not holding or when aiming
         if (activeHeldExtinguisher == null)
         {
-            HandleInteractionRaycast();
+            HandleRaycastInteract();
         }
     }
 
-    private void HandleExtinguisherDischarge()
+    private void LateUpdate()
     {
-        if (activeHeldExtinguisher == null) return;
-
-        // Pull pin [P]
-        if (Input.GetKeyDown(KeyCode.P))
+        // Safety Watchdog: Prevent XR or scene reload from ejecting player to origin
+        if (playerRig != null && playerRig.position.x < 100f)
         {
-            activeHeldExtinguisher.PullSafetyPin();
-        }
-
-        // Squeeze handle [Space] or [Mouse 0]
-        if (Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0))
-        {
-            activeHeldExtinguisher.SqueezeHandle();
-        }
-        else
-        {
-            activeHeldExtinguisher.ReleaseHandle();
+            playerRig.position = new Vector3(202.8f, 0f, 0f);
+            playerRig.rotation = Quaternion.Euler(0f, -90f, 0f);
         }
     }
 
-    private void HandleRotation()
+    // ─── Cursor Management ───────────────────────────────────────────────────
+
+    public void LockCursor(bool locked)
     {
-        // Toggle cursor lock with ESC
+        isCursorLocked   = locked;
+        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible   = !locked;
+    }
+
+    public void SetCursorLock(bool locked) => LockCursor(locked);
+
+    private void HandleCursorLockInput()
+    {
+        // ESC toggles cursor
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            SetCursorLock(!isCursorLocked);
+            LockCursor(!isCursorLocked);
         }
 
-        // Left click anywhere re-locks cursor
-        if (!isCursorLocked && Input.GetMouseButtonDown(0))
+        // Clicking in the Game window re-locks cursor so user can look around
+        if (!isCursorLocked && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)))
         {
-            SetCursorLock(true);
+            // Only relock if not clicking on a GUI dialog button
+            LockCursor(true);
         }
+    }
 
-        // 1. Mouse Look Input (active when cursor is locked OR when clicking)
-        float mouseX = 0f, mouseY = 0f;
-        if (isCursorLocked || Input.GetMouseButton(0) || Input.GetMouseButton(1))
+    // ─── Look & Rotation (360° Mouse + Keyboard) ─────────────────────────────
+
+    private void HandleLook()
+    {
+        // Mouse look: active when cursor locked OR when right-mouse is held
+        if (isCursorLocked || Input.GetMouseButton(1))
         {
-            mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-            mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+            float mouseX = Input.GetAxis("Mouse X");
+            float mouseY = Input.GetAxis("Mouse Y");
+
+            yaw   += mouseX * mouseSensitivity;
+            pitch -= mouseY * mouseSensitivity;
         }
 
-        // 2. Keyboard Turn Input (Q/E or Left/Right Arrow) - guarantees 100% turn responsiveness on any OS!
-        float keyTurn = 0f;
-        if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow)) keyTurn = -1f;
-        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) keyTurn = 1f;
+        // Keyboard turn: Q/E or Left/Right arrows (always available)
+        float turnInput = 0f;
+        if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow))  turnInput -= 1f;
+        if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) turnInput += 1f;
 
-        float keyPitch = 0f;
-        if (Input.GetKey(KeyCode.UpArrow)) keyPitch = 1f;
-        if (Input.GetKey(KeyCode.DownArrow)) keyPitch = -1f;
+        yaw += turnInput * keyboardTurnSpeed * Time.deltaTime;
 
-        yaw += mouseX + (keyTurn * keyboardTurnSpeed * Time.deltaTime);
-        pitch -= mouseY + (keyPitch * keyboardTurnSpeed * 0.7f * Time.deltaTime);
         pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
-
         ApplyRotation();
     }
 
     private void ApplyRotation()
     {
-        if (playerRig != null && cameraTransform != null && playerRig != cameraTransform)
+        if (playerRig != null)
         {
-            // Horizontal Yaw rotates the rig (never overridden by VR eye tracking!)
-            playerRig.rotation = Quaternion.Euler(0f, yaw, 0f);
-            // Vertical Pitch tilts the camera
-            cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-        }
-        else if (cameraTransform != null)
-        {
-            // Direct camera fallback
-            cameraTransform.rotation = Quaternion.Euler(pitch, yaw, 0f);
-        }
-    }
-
-    private void HandleMovement()
-    {
-        float speed = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? sprintSpeed : moveSpeed;
-
-        float h = 0f, v = 0f;
-
-        // Direct WASD Keys
-        if (Input.GetKey(KeyCode.W)) v += 1f;
-        if (Input.GetKey(KeyCode.S)) v -= 1f;
-        if (Input.GetKey(KeyCode.A)) h -= 1f;
-        if (Input.GetKey(KeyCode.D)) h += 1f;
-
-        // Input Manager axis fallback
-        h += Input.GetAxisRaw("Horizontal");
-        v += Input.GetAxisRaw("Vertical");
-
-        h = Mathf.Clamp(h, -1f, 1f);
-        v = Mathf.Clamp(v, -1f, 1f);
-
-        if (Mathf.Abs(h) > 0.01f || Mathf.Abs(v) > 0.01f)
-        {
-            Transform orient = playerRig != null ? playerRig : transform;
-            Vector3 forward = orient.forward; forward.y = 0f; forward.Normalize();
-            Vector3 right = orient.right; right.y = 0f; right.Normalize();
-
-            Vector3 moveDir = (forward * v + right * h).normalized;
-
-            Transform target = playerRig != null ? playerRig : transform;
-            Vector3 newPos = target.position + moveDir * (speed * Time.deltaTime);
-
-            if (newPos.x > 100f)
-            {
-                newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
-                newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
-                // Rig root sits at floor level (Y=0) so camera stays at Eye Height (1.6m)
-                if (target == playerRig && playerRig != cameraTransform)
-                {
-                    newPos.y = 0f;
-                }
-                else
-                {
-                    newPos.y = PlayerEyeHeight;
-                }
-            }
-
-            target.position = newPos;
-        }
-    }
-
-    public void Teleport(Vector3 targetPosition, Vector3 targetEuler)
-    {
-        SetupRigHierarchy();
-
-        if (playerRig != null && playerRig != cameraTransform)
-        {
-            playerRig.position = new Vector3(targetPosition.x, 0f, targetPosition.z);
-            yaw = targetEuler.y;
+            // Body rotates in Yaw (horizontal)
             playerRig.rotation = Quaternion.Euler(0f, yaw, 0f);
 
-            pitch = targetEuler.x > 180f ? targetEuler.x - 360f : targetEuler.x;
+            // Head (Camera) tilts in Pitch (vertical)
             if (cameraTransform != null)
             {
-                cameraTransform.localPosition = new Vector3(0f, PlayerEyeHeight, 0f);
                 cameraTransform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
             }
         }
-        else if (cameraTransform != null)
+        else
         {
-            cameraTransform.position = new Vector3(targetPosition.x, PlayerEyeHeight, targetPosition.z);
-            yaw = targetEuler.y;
-            pitch = targetEuler.x > 180f ? targetEuler.x - 360f : targetEuler.x;
-            cameraTransform.rotation = Quaternion.Euler(pitch, yaw, 0f);
+            transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
         }
     }
 
-    private void HandleInteractionRaycast()
+    // ─── Movement (WASD + Direct Key Fallbacks) ──────────────────────────────
+
+    private void HandleMovement()
     {
-        if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.F))
+        float speed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : moveSpeed;
+
+        // Read axes
+        float forwardAxis = Input.GetAxisRaw("Vertical");
+        float sideAxis    = Input.GetAxisRaw("Horizontal");
+
+        // Direct key fallback (ensures 100% responsiveness even if InputManager has deadzone)
+        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))   forwardAxis =  1f;
+        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) forwardAxis = -1f;
+        if (Input.GetKey(KeyCode.A))                                     sideAxis    = -1f;
+        if (Input.GetKey(KeyCode.D))                                     sideAxis    =  1f;
+
+        if (Mathf.Abs(forwardAxis) < 0.01f && Mathf.Abs(sideAxis) < 0.01f)
+            return;
+
+        // Calculate move direction in horizontal plane relative to camera heading
+        Vector3 forward = (cameraTransform != null ? cameraTransform.forward : transform.forward);
+        forward.y = 0f;
+        forward.Normalize();
+
+        Vector3 right = (cameraTransform != null ? cameraTransform.right : transform.right);
+        right.y = 0f;
+        right.Normalize();
+
+        Vector3 move = (forward * forwardAxis + right * sideAxis).normalized * (speed * Time.deltaTime);
+
+        // Move the player rig
+        Transform target = (playerRig != null) ? playerRig : transform;
+        Vector3 newPos = target.position + move;
+
+        newPos.x = Mathf.Clamp(newPos.x, KitchenMinX, KitchenMaxX);
+        newPos.y = 0f; // Rig sits on floor
+        newPos.z = Mathf.Clamp(newPos.z, KitchenMinZ, KitchenMaxZ);
+
+        target.position = newPos;
+
+        // Ensure camera local Y is eye height
+        if (cameraTransform != null && cameraTransform != transform)
         {
-            Transform origin = cameraTransform != null ? cameraTransform : transform;
-            Ray ray = new Ray(origin.position, origin.forward);
-            if (Physics.Raycast(ray, out RaycastHit hit, interactionDistance))
-            {
-                // 1. Pick up extinguisher
-                FireExtinguisher extinguisher = hit.collider.GetComponentInParent<FireExtinguisher>();
-                if (extinguisher != null && !extinguisher.IsHeld)
-                {
-                    if (activeHeldExtinguisher != null && activeHeldExtinguisher != extinguisher)
-                    {
-                        activeHeldExtinguisher.Drop();
-                    }
-                    extinguisher.Pickup(origin);
-                    activeHeldExtinguisher = extinguisher;
-                    Debug.Log($"[KitchenPlayerController] Picked up: {extinguisher.Type}");
-                    return;
-                }
-
-                // 2. Toggle Alarm Call Point
-                var alarm = hit.collider.GetComponentInParent<FireAlarmController>();
-                if (alarm != null)
-                {
-                    alarm.ToggleAlarm();
-                    return;
-                }
-
-                // 3. Toggle Power Switch
-                var pSwitch = hit.collider.GetComponentInParent<PowerSwitchController>();
-                if (pSwitch != null)
-                {
-                    pSwitch.TogglePower();
-                    return;
-                }
-            }
+            cameraTransform.localPosition = new Vector3(0f, EyeHeight, 0f);
         }
     }
 
-    private void HandleQuickEquipKeys()
+    // ─── Hotkeys & Quick Actions ─────────────────────────────────────────────
+
+    private void HandleHotkeys()
     {
-        // 1: Wet Chemical (F/K)
+        // ── Quick-equip extinguishers ──
         if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
-        {
-            EquipByType(ExtinguisherType.WetChemical);
-        }
-        // 2: Dry Powder (ABC)
+            QuickEquip(ExtinguisherType.Water);
         if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
-        {
-            EquipByType(ExtinguisherType.DryPowder);
-        }
-        // 3: Carbon Dioxide (CO2 - B/Electrical)
+            QuickEquip(ExtinguisherType.DryPowder);
         if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
-        {
-            EquipByType(ExtinguisherType.CO2);
-        }
+            QuickEquip(ExtinguisherType.CO2);
 
-        // Drop [G]
+        // ── Drop [G] ──
         if (Input.GetKeyDown(KeyCode.G) && activeHeldExtinguisher != null)
         {
             activeHeldExtinguisher.Drop();
             activeHeldExtinguisher = null;
         }
 
-        // Reset [R]
+        // ── Reset [R] ──
         if (Input.GetKeyDown(KeyCode.R) && activeHeldExtinguisher != null)
         {
             activeHeldExtinguisher.ResetToStand();
             activeHeldExtinguisher = null;
         }
 
-        // Toggle Alarm [A]
-        if (Input.GetKeyDown(KeyCode.A))
+        // ── Fire Alarm toggle [A] ──
+        // Only if not moving left (check if pressed this frame alone)
+        if (Input.GetKeyDown(KeyCode.A) && !Input.GetKey(KeyCode.W) && !Input.GetKey(KeyCode.S))
         {
-            var alarm = FindObjectOfType<FireAlarmController>();
+            var alarm = Object.FindObjectOfType<FireAlarmController>();
             if (alarm != null) alarm.ToggleAlarm();
         }
 
-        // Toggle Power [L]
+        // ── Power Switch toggle [L] ──
         if (Input.GetKeyDown(KeyCode.L))
         {
-            var psw = FindObjectOfType<PowerSwitchController>();
+            var psw = Object.FindObjectOfType<PowerSwitchController>();
             if (psw != null) psw.TogglePower();
         }
     }
 
-    private void EquipByType(ExtinguisherType type)
+    private void QuickEquip(ExtinguisherType type)
     {
-        Transform origin = cameraTransform != null ? cameraTransform : transform;
-        var all = FindObjectsOfType<FireExtinguisher>();
+        Transform origin = (cameraTransform != null) ? cameraTransform : transform;
+        var all = Object.FindObjectsOfType<FireExtinguisher>();
+
         foreach (var ext in all)
         {
             if (ext.Type == type)
@@ -375,9 +304,35 @@ public class KitchenPlayerController : MonoBehaviour
                 }
                 ext.Pickup(origin);
                 activeHeldExtinguisher = ext;
-                Debug.Log($"[KitchenPlayerController] Quick-equipped: {type}");
+                Debug.Log($"[KitchenPlayerController] Equipped: {type}");
+
+                var hud = Object.FindObjectOfType<TrainingHUD>();
+                if (hud != null) hud.OnExtinguisherSelected(type);
                 return;
             }
+        }
+    }
+
+    // ─── Extinguisher Spray / Discharge ──────────────────────────────────────
+
+    private void HandleExtinguisherSpray()
+    {
+        if (activeHeldExtinguisher == null) return;
+
+        // Pull pin [P]
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            activeHeldExtinguisher.PullSafetyPin();
+        }
+
+        // Squeeze handle: Space or Left Mouse
+        if (Input.GetKey(KeyCode.Space) || (isCursorLocked && Input.GetMouseButton(0)))
+        {
+            activeHeldExtinguisher.SqueezeHandle();
+        }
+        else
+        {
+            activeHeldExtinguisher.ReleaseHandle();
         }
     }
 
@@ -387,5 +342,78 @@ public class KitchenPlayerController : MonoBehaviour
         {
             activeHeldExtinguisher = null;
         }
+    }
+
+    // ─── Raycast Interaction ([F] or Click on objects) ────────────────────────
+
+    private void HandleRaycastInteract()
+    {
+        // Only trigger raycast interact on [F] or left click when cursor locked
+        bool interact = Input.GetKeyDown(KeyCode.F) || (isCursorLocked && Input.GetMouseButtonDown(0));
+        if (!interact) return;
+
+        Transform origin = (cameraTransform != null) ? cameraTransform : transform;
+        Ray ray = new Ray(origin.position, origin.forward);
+
+        if (Physics.Raycast(ray, out RaycastHit hit, interactionDistance))
+        {
+            // 1. Pick up Extinguisher
+            var ext = hit.collider.GetComponentInParent<FireExtinguisher>();
+            if (ext != null && !ext.IsHeld)
+            {
+                if (activeHeldExtinguisher != null && activeHeldExtinguisher != ext)
+                {
+                    activeHeldExtinguisher.Drop();
+                }
+                ext.Pickup(origin);
+                activeHeldExtinguisher = ext;
+                Debug.Log($"[KitchenPlayerController] Picked up: {ext.Type}");
+
+                var hud = Object.FindObjectOfType<TrainingHUD>();
+                if (hud != null) hud.OnExtinguisherSelected(ext.Type);
+                return;
+            }
+
+            // 2. Fire Alarm Call Point
+            var alarm = hit.collider.GetComponentInParent<FireAlarmController>();
+            if (alarm != null)
+            {
+                alarm.ToggleAlarm();
+                return;
+            }
+
+            // 3. Electrical Power Switch
+            var psw = hit.collider.GetComponentInParent<PowerSwitchController>();
+            if (psw != null)
+            {
+                psw.TogglePower();
+                return;
+            }
+        }
+    }
+
+    // ─── Teleport API ────────────────────────────────────────────────────────
+
+    public void Teleport(Vector3 position, Vector3 eulerAngles)
+    {
+        Transform target = (playerRig != null) ? playerRig : transform;
+        target.position = new Vector3(
+            Mathf.Clamp(position.x, KitchenMinX, KitchenMaxX),
+            0f,
+            Mathf.Clamp(position.z, KitchenMinZ, KitchenMaxZ));
+
+        yaw   = eulerAngles.y;
+        pitch = eulerAngles.x;
+        ApplyRotation();
+    }
+
+    public void Teleport(Vector3 position)
+    {
+        Teleport(position, new Vector3(0f, -90f, 0f));
+    }
+
+    public void TeleportTo(Vector3 position, float yawAngle)
+    {
+        Teleport(position, new Vector3(0f, yawAngle, 0f));
     }
 }

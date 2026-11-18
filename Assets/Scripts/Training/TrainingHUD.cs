@@ -138,33 +138,17 @@ public class TrainingHUD : MonoBehaviour
             fireVFX.ExtinguishFire(); // Fire starts off; ignites at FireIgnition state
         }
 
-        // Check if player starts directly in the Kitchen (Room 02) or VR view
-        bool inKitchen = transform.position.x > 100f || (Camera.main != null && Camera.main.transform.position.x > 100f);
-        if (inKitchen)
-        {
-            currentRoomId = "ROOM 02";
-            currentState = TrainingState.KitchenBriefing;
+        // Start with the Figma Welcome Screen (Frame 4:50)
+        currentRoomId = "ROOM 01";
+        currentState  = TrainingState.WelcomeScreen;
 
-            // Spawn 3D VR Holographic Training Board in Kitchen
-            if (FindObjectOfType<VRTrainingBoard>() == null)
-            {
-                new GameObject("VR_Training_Hologram_Board").AddComponent<VRTrainingBoard>();
-            }
-
-            // Ignite fire after brief briefing delay
-            StartCoroutine(IgniteChimneyFireAfter(2.5f));
-            Debug.Log("[TrainingHUD] Trainee started directly in ROOM 02 (Kitchen Environment). VR Board spawned.");
-        }
-        else
+        // Spawn 3D VR Holographic Training Board in Kitchen
+        if (FindObjectOfType<VRTrainingBoard>() == null)
         {
-            // Ensure Room 01 (Orientation Studio) exists for desktop walk-through
-            if (GameObject.Find("Room01_OrientationStudio") == null)
-            {
-                FireSafety.Training.OrientationRoomBuilder.BuildOrientationRoom();
-            }
-            currentRoomId = "ROOM 01";
-            Debug.Log("[TrainingHUD] Ready in ROOM 01 (Orientation Studio).");
+            new GameObject("VR_Training_Hologram_Board").AddComponent<VRTrainingBoard>();
         }
+
+        Debug.Log("[TrainingHUD] Initialized. Starting at Welcome Screen (Figma Workflow).");
 
         // Redesign cookware on the stove and room planters
         FireSafety.Environment.KitchenDecorRedesigner.RedesignAllPots();
@@ -243,9 +227,6 @@ public class TrainingHUD : MonoBehaviour
     void HandleInputHotkeys()
     {
         bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
-        bool space = Input.GetKeyDown(KeyCode.Space);
-        bool eKey  = Input.GetKeyDown(KeyCode.E);
-        bool click = Input.GetMouseButtonDown(0);
         bool t     = Input.GetKeyDown(KeyCode.T); // Debug skip
 
         // Check VR Controller [A / Primary] or Trigger button
@@ -264,7 +245,9 @@ public class TrainingHUD : MonoBehaviour
             }
         }
 
-        bool proceed = enter || space || eKey || click || vrAdvance;
+        // Only Enter key or VR controller primary button advances modal dialogs.
+        // Clicks, Space (spray), and E (turn) are reserved for player interaction.
+        bool proceed = enter || vrAdvance;
 
         if (t) { DebugSkip(); return; }
 
@@ -336,9 +319,9 @@ public class TrainingHUD : MonoBehaviour
         }
         screenFadeAlpha = 1.0f;
 
-        // 2. Teleport player and camera to Kitchen (Room 02)
-        Vector3 kitchenPos = new Vector3(202.50f, 1.60f, 2.50f);
-        Vector3 kitchenRot = new Vector3(5f, -155f, 0f);
+        // 2. Teleport player and camera to Kitchen facing stove & fire
+        Vector3 kitchenPos = new Vector3(202.80f, 1.60f, 0.0f);
+        Vector3 kitchenRot = new Vector3(0f, -90f, 0f);
 
         if (playerController != null)
         {
