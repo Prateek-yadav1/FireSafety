@@ -101,6 +101,11 @@ public static class FireSafetyMasterBootstrap
         cam.nearClipPlane   = 0.05f;
         cam.farClipPlane    = 500f;
         cam.fieldOfView     = 70f;
+#if UNITY_EDITOR
+        cam.stereoTargetEye = StereoTargetEyeMask.None;
+#else
+        cam.stereoTargetEye = StereoTargetEyeMask.Both;
+#endif
 
         // ── Build VR_Player_Rig hierarchy ──
         // Starts in Room 01 (Orientation Studio) at (0,0,0) facing table (+Z)

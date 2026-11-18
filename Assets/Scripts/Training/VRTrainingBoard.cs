@@ -155,6 +155,22 @@ namespace FireSafety.Training
         private void Update()
         {
             UpdateLiveTelemetry();
+            OrientBoardTowardsPlayer();
+        }
+
+        private void OrientBoardTowardsPlayer()
+        {
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            Vector3 toCam = cam.transform.position - transform.position;
+            toCam.y = 0f;
+            if (toCam.sqrMagnitude > 0.05f)
+            {
+                // The front face of the board with text is at -Z (localPos.z = -0.015f)
+                // To make -Z point toward the camera so text is never mirrored:
+                transform.rotation = Quaternion.LookRotation(-toCam.normalized, Vector3.up);
+            }
         }
 
         private void UpdateLiveTelemetry()
