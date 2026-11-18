@@ -25,8 +25,8 @@ public class PowerSwitchController : MonoBehaviour
     public List<Light> emergencyBackupLights = new List<Light>();
 
     [Header("Emergency Blackout Light Level")]
-    [Range(0f, 0.25f)]
-    [SerializeField] private float emergencyNightAmbient = 0.08f; // Just sufficient light to perceive objects and escape route
+    [Range(0f, 1f)]
+    [SerializeField] private float emergencyNightAmbient = 0.65f; // Clear visibility to see equipment, exits, and fire
 
     [Header("Switch Visual Handle")]
     public Transform switchHandle;
@@ -136,7 +136,7 @@ public class PowerSwitchController : MonoBehaviour
                 }
             }
 
-            RenderSettings.ambientIntensity = 0.65f;
+            RenderSettings.ambientIntensity = emergencyNightAmbient;
             RenderSettings.ambientLight = new Color(0.22f, 0.24f, 0.28f);
 
             // Activate fire alarm (battery-backed — it stays on)

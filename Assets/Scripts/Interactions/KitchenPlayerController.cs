@@ -114,11 +114,33 @@ public class KitchenPlayerController : MonoBehaviour
         HandleRotation();
         HandleMovement();
         HandleQuickEquipKeys();
+        HandleExtinguisherDischarge();
         TrackHeldExtinguisher();
 
         if (activeHeldExtinguisher == null)
         {
             HandleInteractionRaycast();
+        }
+    }
+
+    private void HandleExtinguisherDischarge()
+    {
+        if (activeHeldExtinguisher == null) return;
+
+        // Pull pin [P]
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            activeHeldExtinguisher.PullSafetyPin();
+        }
+
+        // Squeeze handle [Space] or [Mouse 0]
+        if (Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0))
+        {
+            activeHeldExtinguisher.SqueezeHandle();
+        }
+        else
+        {
+            activeHeldExtinguisher.ReleaseHandle();
         }
     }
 
@@ -267,9 +289,10 @@ public class KitchenPlayerController : MonoBehaviour
                     {
                         activeHeldExtinguisher.Drop();
                     }
-                    extinguisher.PickUp();
+                    Transform origin = cameraTransform != null ? cameraTransform : transform;
+                    extinguisher.Pickup(origin);
                     activeHeldExtinguisher = extinguisher;
-                    Debug.Log($"[KitchenPlayerController] Picked up: {extinguisher.ExtinguisherType}");
+                    Debug.Log($"[KitchenPlayerController] Picked up: {extinguisher.Type}");
                     return;
                 }
 
@@ -307,7 +330,7 @@ public class KitchenPlayerController : MonoBehaviour
         // 3: Carbon Dioxide (CO2 - B/Electrical)
         if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
         {
-            EquipByType(ExtinguisherType.CarbonDioxide);
+            EquipByType(ExtinguisherType.CO2);
         }
 
         // Drop [G]
@@ -320,7 +343,7 @@ public class KitchenPlayerController : MonoBehaviour
         // Reset [R]
         if (Input.GetKeyDown(KeyCode.R) && activeHeldExtinguisher != null)
         {
-            activeHeldExtinguisher.ResetToWall();
+            activeHeldExtinguisher.ResetToStand();
             activeHeldExtinguisher = null;
         }
 
@@ -341,16 +364,17 @@ public class KitchenPlayerController : MonoBehaviour
 
     private void EquipByType(ExtinguisherType type)
     {
+        Transform origin = cameraTransform != null ? cameraTransform : transform;
         var all = FindObjectsOfType<FireExtinguisher>();
         foreach (var ext in all)
         {
-            if (ext.ExtinguisherType == type)
+            if (ext.Type == type)
             {
                 if (activeHeldExtinguisher != null && activeHeldExtinguisher != ext)
                 {
-                    activeHeldExtinguisher.ResetToWall();
+                    activeHeldExtinguisher.ResetToStand();
                 }
-                ext.PickUp();
+                ext.Pickup(origin);
                 activeHeldExtinguisher = ext;
                 Debug.Log($"[KitchenPlayerController] Quick-equipped: {type}");
                 return;
