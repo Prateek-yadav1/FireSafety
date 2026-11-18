@@ -214,9 +214,19 @@ public static class FireSafetyMasterBootstrap
 
     private static void EnsureFireAlarm()
     {
-        if (Object.FindObjectOfType<FireAlarmController>() != null) return;
+        var existing = Object.FindObjectsOfType<FireAlarmController>();
+        if (existing != null && existing.Length > 0)
+        {
+            foreach (var a in existing)
+            {
+                a.transform.position = new Vector3(205.316f, 1.565f, -1.372f);
+                a.transform.eulerAngles = new Vector3(0f, -90f, 0f);
+            }
+            return;
+        }
+
         var go = new GameObject("FireAlarm_Controller");
-        go.transform.position    = new Vector3(205.40f, 1.45f, 1.20f);
+        go.transform.position    = new Vector3(205.316f, 1.565f, -1.372f);
         go.transform.eulerAngles = new Vector3(0f, -90f, 0f);
         go.AddComponent<FireAlarmController>();
     }

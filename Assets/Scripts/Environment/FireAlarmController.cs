@@ -107,17 +107,16 @@ public class FireAlarmController : MonoBehaviour
 
     private void BuildVisualStationIfNeeded()
     {
-        if (transform.Find("AlarmHousing") != null)
-            return;
-
-        // Wall location next to the exit door (X=205.316, Y=1.565, Z=-1.372)
-        Vector3 wallPos = transform.position != Vector3.zero ? transform.position : new Vector3(205.316f, 1.565f, -1.372f);
-
+        // Wall location next to the exit door where the old alarm box was (X=205.316, Y=1.565, Z=-1.372)
+        Vector3 wallPos = new Vector3(205.316f, 1.565f, -1.372f);
         transform.position = wallPos;
 
         // Facing into kitchen (-X).
         transform.rotation =
             Quaternion.Euler(0f, -90f, 0f);
+
+        if (transform.Find("AlarmHousing") != null)
+            return;
 
         Shader shader =
             Shader.Find("Universal Render Pipeline/Lit");

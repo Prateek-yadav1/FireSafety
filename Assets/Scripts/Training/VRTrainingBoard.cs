@@ -171,7 +171,23 @@ namespace FireSafety.Training
         private void Update()
         {
             UpdateBoardRoomPlacement();
+            OrientBoardTowardsPlayer();
             UpdateLiveTelemetry();
+        }
+
+        private void OrientBoardTowardsPlayer()
+        {
+            Camera cam = Camera.main;
+            if (cam == null) return;
+            Vector3 toCam = cam.transform.position - transform.position;
+            toCam.y = 0f;
+            if (toCam.sqrMagnitude > 0.05f)
+            {
+                // Text is on the -Z local face of the board.
+                // Setting forward (+Z) to point away from camera (-toCam)
+                // makes the -Z face point directly at the player camera.
+                transform.rotation = Quaternion.LookRotation(-toCam.normalized, Vector3.up);
+            }
         }
 
         private void UpdateBoardRoomPlacement()
@@ -181,10 +197,11 @@ namespace FireSafety.Training
 
             if (inKitchen && _isRoom01)
             {
-                // Transitioned to Kitchen
+                // Transitioned to Kitchen: place cleanly to the right of the fire hazard,
+                // facing trainee at comfortable viewing angle
                 _isRoom01 = false;
-                transform.position = new Vector3(201.75f, 1.55f, 1.35f);
-                transform.rotation = Quaternion.Euler(0f, 155f, 0f);
+                transform.position = new Vector3(201.35f, 1.50f, 0.85f);
+                OrientBoardTowardsPlayer();
             }
             else if (!inKitchen && !_isRoom01)
             {

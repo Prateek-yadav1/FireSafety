@@ -18,37 +18,95 @@ namespace FireSafety.Environment
     {
         public static void RedesignAllPots()
         {
-            // 1. Remove / hide legacy low-quality pot models
+            // 1. Remove / hide legacy low-quality models, old red cylinders, and old alarm box
             HideLegacyPotModels();
 
             // 2. Build or refresh modern cooking cookware on the stove
             BuildStoveCookware();
 
-            // 3. Build or refresh high-end modern planter pots
-            BuildModernPlanters();
+            // 3. Remove unwanted floor pot in the middle of the kitchen as requested
+            RemoveUnwantedKitchenPots();
 
-            Debug.Log("[KitchenDecorRedesigner] ✓ All kitchen cookware and planter pots redesigned successfully.");
+            Debug.Log("[KitchenDecorRedesigner] ✓ Kitchen decor, cookware, and cleanup completed successfully.");
         }
 
-        // ─── 1. Clean up old/glitchy pot meshes ────────────────────────────────
+        // ─── 1. Clean up old/glitchy pot meshes, old red cylinders & old alarm box ──
         private static void HideLegacyPotModels()
         {
-            string[] legacyPotNames = {
+            string[] legacyNames = {
+                // Old red cylinders & legacy canisters
+                "Cylinder_4",
+                "Object_12.001",
+                "Cylinder.001",
+                "Cylinder.002",
+                "Cylinder.003",
+                "Cylinder.004",
+                "Cylinder.005",
+                "Cylinder.006",
+                "Cylinder.007",
+                "Sketchfab_model.009",
+                // Old red alarm box from FBX / legacy models
+                "Sketchfab_model.002",
+                "f8c5ab4e60d847bbbf1232186ac817c6",
+                "Object_2.001",
+                // Legacy plant pots & foliage
+                "Sketchfab_model.003",
+                "Sketchfab_model.005",
+                "Sketchfab_model.006",
+                "Sketchfab_model.007",
+                "Sketchfab_model.011",
+                "farm05",
                 "Plant_Pot_Old",
-                "Legacy_Pot_Old"
+                "Legacy_Pot_Old",
+                "pan1"
             };
 
-            foreach (var name in legacyPotNames)
+            var allObjs = Object.FindObjectsOfType<GameObject>();
+            foreach (var go in allObjs)
             {
-                var objs = GameObject.FindObjectsOfType<GameObject>();
-                foreach (var go in objs)
+                if (go == null) continue;
+                // Only clean objects in the Kitchen area (X > 100) or under Kitchen_Test
+                if (go.transform.position.x < 100f && !go.name.Contains("Kitchen")) continue;
+
+                foreach (var name in legacyNames)
                 {
-                    if (go.name.Contains(name) && !go.name.Contains("Redesigned"))
+                    if (go.name.Contains(name) && !go.name.Contains("Redesigned") && !go.name.Contains("Extinguisher"))
                     {
                         var renderer = go.GetComponent<Renderer>();
                         if (renderer != null) renderer.enabled = false;
                         var col = go.GetComponent<Collider>();
                         if (col != null) col.enabled = false;
+                        go.SetActive(false);
+                    }
+                }
+            }
+        }
+
+        // ─── 2. Remove Unwanted Floor Pots ─────────────────────────────────────
+        private static void RemoveUnwantedKitchenPots()
+        {
+            // Remove existing Planters_Redesigned root
+            GameObject existing = GameObject.Find("Planters_Redesigned");
+            if (existing != null) Object.DestroyImmediate(existing);
+
+            // Clean up any remaining scene objects from the old planter
+            string[] unwantedNames = { "Corner_LuxuryPlanter", "CeramicPot", "PotCollar", "Table_SucculentPlanter", "PebbleBed" };
+            var allObjs = Object.FindObjectsOfType<GameObject>();
+            foreach (var go in allObjs)
+            {
+                if (go == null) continue;
+                if (go.transform.position.x < 100f) continue;
+
+                foreach (var uname in unwantedNames)
+                {
+                    if (go.name.Contains(uname))
+                    {
+                        var r = go.GetComponent<Renderer>();
+                        if (r != null) r.enabled = false;
+                        var c = go.GetComponent<Collider>();
+                        if (c != null) c.enabled = false;
+                        Object.DestroyImmediate(go);
+                        break;
                     }
                 }
             }
